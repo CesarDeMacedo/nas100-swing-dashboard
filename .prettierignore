@@ -1,0 +1,9 @@
+node_modules/
+dist/
+coverage/
+design/*.png
+design/DESIGN_SPEC.md
+docs/PRD.md
+mock/current-analysis.json
+README.md
+package-lock.json

@@ -1,0 +1,912 @@
+{
+  "schemaVersion": "1.0.0",
+  "datasetId": "nas100-h4-synthetic-phase2-v1",
+  "description": "Synthetic mock NAS100 H4 candles for deterministic local chart development. Not live market data.",
+  "isSynthetic": true,
+  "timezone": "America/Toronto",
+  "instrument": "NAS100",
+  "timeframe": "H4",
+  "generatedFor": "Phase 2 chart integration",
+  "candles": [
+    {
+      "time": "2026-07-01T01:00:00-04:00",
+      "open": 28590,
+      "high": 28694,
+      "low": 28542,
+      "close": 28640,
+      "isClosed": true,
+      "volume": 11800,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-01T05:00:00-04:00",
+      "open": 28644,
+      "high": 28744,
+      "low": 28581,
+      "close": 28672,
+      "isClosed": true,
+      "volume": 13539,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-01T09:00:00-04:00",
+      "open": 28669,
+      "high": 28748,
+      "low": 28588,
+      "close": 28702,
+      "isClosed": true,
+      "volume": 15278,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-01T13:00:00-04:00",
+      "open": 28708,
+      "high": 28805,
+      "low": 28656,
+      "close": 28717,
+      "isClosed": true,
+      "volume": 17017,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-01T17:00:00-04:00",
+      "open": 28712,
+      "high": 28801,
+      "low": 28642,
+      "close": 28740,
+      "isClosed": true,
+      "volume": 18756,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-01T21:00:00-04:00",
+      "open": 28742,
+      "high": 28866,
+      "low": 28697,
+      "close": 28787,
+      "isClosed": true,
+      "volume": 12295,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-02T01:00:00-04:00",
+      "open": 28787,
+      "high": 28878,
+      "low": 28711,
+      "close": 28828,
+      "isClosed": true,
+      "volume": 14034,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-02T05:00:00-04:00",
+      "open": 28821,
+      "high": 28897,
+      "low": 28763,
+      "close": 28831,
+      "isClosed": true,
+      "volume": 15773,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-02T09:00:00-04:00",
+      "open": 28835,
+      "high": 28889,
+      "low": 28773,
+      "close": 28821,
+      "isClosed": true,
+      "volume": 17512,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-02T13:00:00-04:00",
+      "open": 28818,
+      "high": 28920,
+      "low": 28755,
+      "close": 28848,
+      "isClosed": true,
+      "volume": 19251,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-02T17:00:00-04:00",
+      "open": 28854,
+      "high": 28953,
+      "low": 28773,
+      "close": 28907,
+      "isClosed": true,
+      "volume": 12790,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-02T21:00:00-04:00",
+      "open": 28902,
+      "high": 29035,
+      "low": 28850,
+      "close": 28947,
+      "isClosed": true,
+      "volume": 14529,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-03T01:00:00-04:00",
+      "open": 28949,
+      "high": 29013,
+      "low": 28879,
+      "close": 28952,
+      "isClosed": true,
+      "volume": 16268,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-03T05:00:00-04:00",
+      "open": 28952,
+      "high": 29043,
+      "low": 28907,
+      "close": 28964,
+      "isClosed": true,
+      "volume": 18007,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-03T09:00:00-04:00",
+      "open": 28957,
+      "high": 29057,
+      "low": 28881,
+      "close": 29007,
+      "isClosed": true,
+      "volume": 19746,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-03T13:00:00-04:00",
+      "open": 29011,
+      "high": 29121,
+      "low": 28953,
+      "close": 29055,
+      "isClosed": true,
+      "volume": 13285,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-03T17:00:00-04:00",
+      "open": 29052,
+      "high": 29133,
+      "low": 29004,
+      "close": 29079,
+      "isClosed": true,
+      "volume": 15024,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-03T21:00:00-04:00",
+      "open": 29085,
+      "high": 29166,
+      "low": 29022,
+      "close": 29094,
+      "isClosed": true,
+      "volume": 16763,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-06T01:00:00-04:00",
+      "open": 29089,
+      "high": 29166,
+      "low": 29008,
+      "close": 29120,
+      "isClosed": true,
+      "volume": 18502,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-06T05:00:00-04:00",
+      "open": 29122,
+      "high": 29210,
+      "low": 29033,
+      "close": 29085,
+      "isClosed": true,
+      "volume": 12041,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-06T09:00:00-04:00",
+      "open": 29085,
+      "high": 29146,
+      "low": 28989,
+      "close": 29059,
+      "isClosed": true,
+      "volume": 13780,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-06T13:00:00-04:00",
+      "open": 29052,
+      "high": 29131,
+      "low": 28977,
+      "close": 29022,
+      "isClosed": true,
+      "volume": 15519,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-06T17:00:00-04:00",
+      "open": 29026,
+      "high": 29076,
+      "low": 28888,
+      "close": 28964,
+      "isClosed": true,
+      "volume": 17258,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-06T21:00:00-04:00",
+      "open": 28961,
+      "high": 29027,
+      "low": 28856,
+      "close": 28914,
+      "isClosed": true,
+      "volume": 18997,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-07T01:00:00-04:00",
+      "open": 28920,
+      "high": 28974,
+      "low": 28851,
+      "close": 28899,
+      "isClosed": true,
+      "volume": 12536,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-07T05:00:00-04:00",
+      "open": 28894,
+      "high": 28966,
+      "low": 28828,
+      "close": 28891,
+      "isClosed": true,
+      "volume": 14275,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-07T09:00:00-04:00",
+      "open": 28893,
+      "high": 28939,
+      "low": 28767,
+      "close": 28848,
+      "isClosed": true,
+      "volume": 16014,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-07T13:00:00-04:00",
+      "open": 28848,
+      "high": 28936,
+      "low": 28734,
+      "close": 28786,
+      "isClosed": true,
+      "volume": 17753,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-07T17:00:00-04:00",
+      "open": 28779,
+      "high": 28840,
+      "low": 28684,
+      "close": 28754,
+      "isClosed": true,
+      "volume": 19492,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-07T21:00:00-04:00",
+      "open": 28758,
+      "high": 28837,
+      "low": 28709,
+      "close": 28754,
+      "isClosed": true,
+      "volume": 13031,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-08T01:00:00-04:00",
+      "open": 28751,
+      "high": 28801,
+      "low": 28660,
+      "close": 28736,
+      "isClosed": true,
+      "volume": 14770,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-08T05:00:00-04:00",
+      "open": 28742,
+      "high": 28808,
+      "low": 28622,
+      "close": 28680,
+      "isClosed": true,
+      "volume": 16509,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-08T09:00:00-04:00",
+      "open": 28675,
+      "high": 28729,
+      "low": 28572,
+      "close": 28620,
+      "isClosed": true,
+      "volume": 18248,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-08T13:00:00-04:00",
+      "open": 28622,
+      "high": 28694,
+      "low": 28524,
+      "close": 28587,
+      "isClosed": true,
+      "volume": 19987,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-08T17:00:00-04:00",
+      "open": 28587,
+      "high": 28633,
+      "low": 28483,
+      "close": 28564,
+      "isClosed": true,
+      "volume": 13526,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-08T21:00:00-04:00",
+      "open": 28557,
+      "high": 28645,
+      "low": 28476,
+      "close": 28528,
+      "isClosed": true,
+      "volume": 15265,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-09T01:00:00-04:00",
+      "open": 28532,
+      "high": 28593,
+      "low": 28420,
+      "close": 28490,
+      "isClosed": true,
+      "volume": 17004,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-09T05:00:00-04:00",
+      "open": 28487,
+      "high": 28592,
+      "low": 28442,
+      "close": 28513,
+      "isClosed": true,
+      "volume": 18743,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-09T09:00:00-04:00",
+      "open": 28519,
+      "high": 28592,
+      "low": 28443,
+      "close": 28542,
+      "isClosed": true,
+      "volume": 12282,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-09T13:00:00-04:00",
+      "open": 28537,
+      "high": 28652,
+      "low": 28479,
+      "close": 28586,
+      "isClosed": true,
+      "volume": 14021,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-09T17:00:00-04:00",
+      "open": 28588,
+      "high": 28678,
+      "low": 28540,
+      "close": 28624,
+      "isClosed": true,
+      "volume": 15760,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-09T21:00:00-04:00",
+      "open": 28624,
+      "high": 28710,
+      "low": 28561,
+      "close": 28638,
+      "isClosed": true,
+      "volume": 17499,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-10T01:00:00-04:00",
+      "open": 28631,
+      "high": 28702,
+      "low": 28550,
+      "close": 28656,
+      "isClosed": true,
+      "volume": 19238,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-10T05:00:00-04:00",
+      "open": 28660,
+      "high": 28795,
+      "low": 28608,
+      "close": 28707,
+      "isClosed": true,
+      "volume": 12777,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-10T09:00:00-04:00",
+      "open": 28704,
+      "high": 28828,
+      "low": 28634,
+      "close": 28767,
+      "isClosed": true,
+      "volume": 14516,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-10T13:00:00-04:00",
+      "open": 28773,
+      "high": 28868,
+      "low": 28728,
+      "close": 28789,
+      "isClosed": true,
+      "volume": 16255,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-10T17:00:00-04:00",
+      "open": 28784,
+      "high": 28834,
+      "low": 28704,
+      "close": 28780,
+      "isClosed": true,
+      "volume": 17994,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-10T21:00:00-04:00",
+      "open": 28782,
+      "high": 28859,
+      "low": 28724,
+      "close": 28793,
+      "isClosed": true,
+      "volume": 19733,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-13T01:00:00-04:00",
+      "open": 28793,
+      "high": 28898,
+      "low": 28745,
+      "close": 28844,
+      "isClosed": true,
+      "volume": 13272,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-13T05:00:00-04:00",
+      "open": 28837,
+      "high": 28965,
+      "low": 28774,
+      "close": 28893,
+      "isClosed": true,
+      "volume": 15011,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-13T09:00:00-04:00",
+      "open": 28897,
+      "high": 28955,
+      "low": 28816,
+      "close": 28909,
+      "isClosed": true,
+      "volume": 16750,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-13T13:00:00-04:00",
+      "open": 28906,
+      "high": 29007,
+      "low": 28854,
+      "close": 28919,
+      "isClosed": true,
+      "volume": 18489,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-13T17:00:00-04:00",
+      "open": 28925,
+      "high": 29016,
+      "low": 28855,
+      "close": 28955,
+      "isClosed": true,
+      "volume": 12028,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-13T21:00:00-04:00",
+      "open": 28950,
+      "high": 29081,
+      "low": 28905,
+      "close": 29002,
+      "isClosed": true,
+      "volume": 13767,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-14T01:00:00-04:00",
+      "open": 29004,
+      "high": 29085,
+      "low": 28928,
+      "close": 29035,
+      "isClosed": true,
+      "volume": 15506,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-14T05:00:00-04:00",
+      "open": 29035,
+      "high": 29126,
+      "low": 28977,
+      "close": 29060,
+      "isClosed": true,
+      "volume": 17245,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-14T09:00:00-04:00",
+      "open": 29053,
+      "high": 29107,
+      "low": 28983,
+      "close": 29031,
+      "isClosed": true,
+      "volume": 18984,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-14T13:00:00-04:00",
+      "open": 29035,
+      "high": 29107,
+      "low": 28942,
+      "close": 29005,
+      "isClosed": true,
+      "volume": 12523,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-14T17:00:00-04:00",
+      "open": 29002,
+      "high": 29048,
+      "low": 28917,
+      "close": 28998,
+      "isClosed": true,
+      "volume": 14262,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-14T21:00:00-04:00",
+      "open": 29004,
+      "high": 29092,
+      "low": 28929,
+      "close": 28981,
+      "isClosed": true,
+      "volume": 16001,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-15T01:00:00-04:00",
+      "open": 28976,
+      "high": 29037,
+      "low": 28857,
+      "close": 28927,
+      "isClosed": true,
+      "volume": 17740,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-15T05:00:00-04:00",
+      "open": 28929,
+      "high": 29008,
+      "low": 28824,
+      "close": 28869,
+      "isClosed": true,
+      "volume": 19479,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-15T09:00:00-04:00",
+      "open": 28869,
+      "high": 28919,
+      "low": 28776,
+      "close": 28852,
+      "isClosed": true,
+      "volume": 13018,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-15T13:00:00-04:00",
+      "open": 28845,
+      "high": 28922,
+      "low": 28787,
+      "close": 28856,
+      "isClosed": true,
+      "volume": 14757,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-15T17:00:00-04:00",
+      "open": 28860,
+      "high": 28914,
+      "low": 28783,
+      "close": 28831,
+      "isClosed": true,
+      "volume": 16496,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-15T21:00:00-04:00",
+      "open": 28828,
+      "high": 28900,
+      "low": 28717,
+      "close": 28780,
+      "isClosed": true,
+      "volume": 18235,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-16T01:00:00-04:00",
+      "open": 28786,
+      "high": 28832,
+      "low": 28667,
+      "close": 28748,
+      "isClosed": true,
+      "volume": 19974,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-16T05:00:00-04:00",
+      "open": 28743,
+      "high": 28831,
+      "low": 28689,
+      "close": 28741,
+      "isClosed": true,
+      "volume": 13513,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-16T09:00:00-04:00",
+      "open": 28743,
+      "high": 28804,
+      "low": 28654,
+      "close": 28724,
+      "isClosed": true,
+      "volume": 15252,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-16T13:00:00-04:00",
+      "open": 28724,
+      "high": 28803,
+      "low": 28645,
+      "close": 28690,
+      "isClosed": true,
+      "volume": 16991,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-16T17:00:00-04:00",
+      "open": 28683,
+      "high": 28759,
+      "low": 28607,
+      "close": 28709,
+      "isClosed": true,
+      "volume": 18730,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-16T21:00:00-04:00",
+      "open": 28713,
+      "high": 28791,
+      "low": 28655,
+      "close": 28725,
+      "isClosed": true,
+      "volume": 12269,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-17T01:00:00-04:00",
+      "open": 28722,
+      "high": 28808,
+      "low": 28674,
+      "close": 28754,
+      "isClosed": true,
+      "volume": 14008,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-17T05:00:00-04:00",
+      "open": 28760,
+      "high": 28859,
+      "low": 28697,
+      "close": 28787,
+      "isClosed": true,
+      "volume": 15747,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-17T09:00:00-04:00",
+      "open": 28782,
+      "high": 28840,
+      "low": 28701,
+      "close": 28794,
+      "isClosed": true,
+      "volume": 17486,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-17T13:00:00-04:00",
+      "open": 28796,
+      "high": 28884,
+      "low": 28731,
+      "close": 28783,
+      "isClosed": true,
+      "volume": 19225,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-17T17:00:00-04:00",
+      "open": 28783,
+      "high": 28856,
+      "low": 28713,
+      "close": 28795,
+      "isClosed": true,
+      "volume": 12764,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-17T21:00:00-04:00",
+      "open": 28788,
+      "high": 28921,
+      "low": 28743,
+      "close": 28842,
+      "isClosed": true,
+      "volume": 14503,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-20T01:00:00-04:00",
+      "open": 28846,
+      "high": 28932,
+      "low": 28770,
+      "close": 28882,
+      "isClosed": true,
+      "volume": 16242,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-20T05:00:00-04:00",
+      "open": 28879,
+      "high": 28950,
+      "low": 28821,
+      "close": 28884,
+      "isClosed": true,
+      "volume": 17981,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-20T09:00:00-04:00",
+      "open": 28890,
+      "high": 28944,
+      "low": 28831,
+      "close": 28879,
+      "isClosed": true,
+      "volume": 19720,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-20T13:00:00-04:00",
+      "open": 28874,
+      "high": 28985,
+      "low": 28811,
+      "close": 28913,
+      "isClosed": true,
+      "volume": 13259,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-20T17:00:00-04:00",
+      "open": 28915,
+      "high": 29014,
+      "low": 28834,
+      "close": 28968,
+      "isClosed": true,
+      "volume": 14998,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-20T21:00:00-04:00",
+      "open": 28968,
+      "high": 29085,
+      "low": 28916,
+      "close": 28997,
+      "isClosed": true,
+      "volume": 16737,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-21T01:00:00-04:00",
+      "open": 28990,
+      "high": 29053,
+      "low": 28920,
+      "close": 28992,
+      "isClosed": true,
+      "volume": 18476,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-21T05:00:00-04:00",
+      "open": 28996,
+      "high": 29075,
+      "low": 28949,
+      "close": 28994,
+      "isClosed": true,
+      "volume": 12015,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-21T09:00:00-04:00",
+      "open": 28991,
+      "high": 29070,
+      "low": 28915,
+      "close": 29020,
+      "isClosed": true,
+      "volume": 13754,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-21T13:00:00-04:00",
+      "open": 29026,
+      "high": 29115,
+      "low": 28968,
+      "close": 29049,
+      "isClosed": true,
+      "volume": 15493,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-21T17:00:00-04:00",
+      "open": 29044,
+      "high": 29119,
+      "low": 28996,
+      "close": 29065,
+      "isClosed": true,
+      "volume": 17232,
+      "source": "synthetic_mock"
+    },
+    {
+      "time": "2026-07-21T21:00:00-04:00",
+      "open": 29067,
+      "high": 29154,
+      "low": 29004,
+      "close": 29082,
+      "isClosed": true,
+      "volume": 18971,
+      "source": "synthetic_mock"
+    }
+  ]
+}

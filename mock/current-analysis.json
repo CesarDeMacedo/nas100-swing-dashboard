@@ -1,0 +1,179 @@
+{
+  "schemaVersion": "1.0.0",
+  "strategyVersion": "mock-display-1.0.0",
+  "id": "mock-analysis-001",
+  "generatedAt": "2026-07-21T21:10:00-04:00",
+  "completedCandleAt": "2026-07-21T21:00:00-04:00",
+  "officialTimezone": "America/Toronto",
+  "dataProvider": "mock",
+  "dataFreshness": "MOCK",
+  "latestCandleStatus": "COMPLETED",
+  "instrument": "NAS100",
+  "displayName": "NAS100 (US 100)",
+  "timeframe": "H4",
+  "dailyRegime": "DEFENSIVE_BULLISH",
+  "h4Structure": "PULLBACK_FORMING",
+  "bias": "BULLISH_CAUTIOUS",
+  "status": "SETUP_FORMING",
+  "action": "WAIT_FOR_PULLBACK",
+  "score": 74,
+  "grade": "B",
+  "confidence": 72,
+  "currentPrice": 29082,
+  "changePercent": 0.85,
+  "supportZones": [
+    {
+      "id": "support-primary-pullback",
+      "type": "SUPPORT",
+      "low": 28880,
+      "high": 28920,
+      "label": "Primary pullback support",
+      "source": "H4 structure",
+      "confidence": 82,
+      "lockedByUser": false
+    },
+    {
+      "id": "support-secondary-reaction",
+      "type": "SUPPORT",
+      "low": 28680,
+      "high": 28720,
+      "label": "Secondary support",
+      "source": "Previous reaction zone",
+      "confidence": 70,
+      "lockedByUser": false
+    }
+  ],
+  "resistanceZones": [
+    {
+      "id": "resistance-recent-h4-high",
+      "type": "RESISTANCE",
+      "low": 29200,
+      "high": 29230,
+      "label": "Resistance 1",
+      "source": "Recent H4 swing high",
+      "confidence": 85,
+      "lockedByUser": false
+    },
+    {
+      "id": "resistance-daily",
+      "type": "RESISTANCE",
+      "low": 29380,
+      "high": 29420,
+      "label": "Resistance 2",
+      "source": "Daily resistance",
+      "confidence": 76,
+      "lockedByUser": false
+    }
+  ],
+  "preferredEntryZone": {
+    "id": "entry-preferred-long-pullback",
+    "type": "ENTRY",
+    "low": 28880,
+    "high": 28920,
+    "label": "Preferred long pullback zone",
+    "source": "Support and H4 structure",
+    "confidence": 82,
+    "lockedByUser": false
+  },
+  "entryTrigger": "Completed bullish H4 confirmation after price holds the 28,900 support zone.",
+  "invalidation": 28850,
+  "stop": 28820,
+  "targets": [29220, 29400],
+  "estimatedRR": 2.1,
+  "reason": "Trend and breadth improved, but price is too close to resistance and requires a confirmed pullback.",
+  "whyNoEntry": [
+    "Price is approaching resistance.",
+    "A cleaner H4 pullback location is required.",
+    "Current reward-to-risk is below the preferred level.",
+    "Major technology earnings increase event risk."
+  ],
+  "whatToDoNext": [
+    "Wait for a pullback toward 28,900.",
+    "Look for a completed bullish H4 rejection candle.",
+    "Only act when reward-to-risk is at least 2:1.",
+    "Cancel the bullish setup if 28,900 fails on a completed H4 candle."
+  ],
+  "marketContext": [
+    "NAS100 is recovering with technology leadership.",
+    "US500 and US30 confirm part of the move.",
+    "Russell 2000 participation has improved.",
+    "Oil and yields remain important headwinds."
+  ],
+  "indicators": {
+    "ema5": 29018,
+    "ema8": 28982,
+    "ema13": 28920,
+    "ema20": 28895,
+    "ema21": 28888,
+    "ema50": 28640,
+    "ema200": 27850,
+    "rsi14": 61.8,
+    "atr14": 182.4,
+    "distanceFromEma20Atr": 1.03
+  },
+  "crossMarket": {
+    "us500": {
+      "instrument": "US500",
+      "confirmation": "CONFIRMING",
+      "dataFreshness": "MOCK",
+      "notes": ["US500 confirms part of the recovery move."]
+    },
+    "us30": {
+      "instrument": "US30",
+      "confirmation": "CONFIRMING",
+      "dataFreshness": "MOCK",
+      "notes": ["US30 confirms part of the recovery move."]
+    },
+    "russell2000": {
+      "instrument": "RUSSELL_2000",
+      "confirmation": "NEUTRAL",
+      "dataFreshness": "MOCK",
+      "notes": ["Russell 2000 participation has improved."]
+    },
+    "confirmationStatus": "MIXED",
+    "dataFreshness": "MOCK",
+    "notes": ["US500 and US30 are the primary confirmation instruments."]
+  },
+  "eventRisk": [
+    {
+      "status": "AVAILABLE",
+      "severity": "HIGH",
+      "eventName": "Major technology earnings",
+      "eventTime": "2026-07-22T16:00:00-04:00",
+      "source": "synthetic_mock",
+      "freshness": "MOCK",
+      "blocksEntry": false,
+      "notes": ["Event risk supports patience but does not independently authorize an action."]
+    }
+  ],
+  "dataHealth": {
+    "status": "HEALTHY",
+    "providerStatus": "MOCK",
+    "lastSuccessfulUpdate": "2026-07-21T21:10:00-04:00",
+    "latestExpectedCandleTime": "2026-07-21T21:00:00-04:00",
+    "latestAvailableCandleTime": "2026-07-21T21:00:00-04:00",
+    "latestCandleClosed": true,
+    "staleAfterMinutes": 250,
+    "validationErrors": [],
+    "warnings": ["Synthetic mock data is not suitable for live trading decisions."]
+  },
+  "setupScoreBreakdown": {
+    "trend": 16,
+    "structure": 14,
+    "momentum": 10,
+    "location": 11,
+    "crossMarket": 8,
+    "eventRisk": 5,
+    "rewardRisk": 10,
+    "patienceFilter": 0,
+    "total": 74
+  },
+  "candlesReference": {
+    "datasetId": "nas100-h4-synthetic-phase2-v1",
+    "instrument": "NAS100",
+    "timeframe": "H4",
+    "latestCandleTime": "2026-07-21T21:00:00-04:00",
+    "candleCount": 90,
+    "synthetic": true
+  }
+}
