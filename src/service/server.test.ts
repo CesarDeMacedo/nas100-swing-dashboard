@@ -7,20 +7,22 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { createLocalService, LOCAL_SERVICE_HOST } from './server';
+import type { SchedulerStatus } from './scheduler/fixtureScheduler';
 
 type RunningService = {
   stop: () => Promise<void>;
+  schedulerStatus: () => SchedulerStatus;
   baseUrl: string;
   directory: string;
 };
 
 const services: RunningService[] = [];
 
-const startService = async (): Promise<RunningService> => {
+const startService = async (schedulerEnabled = false): Promise<RunningService> => {
   const directory = mkdtempSync(join(tmpdir(), 'nas100-service-'));
-  const service = createLocalService({ databasePath: join(directory, 'history.sqlite'), port: 0 });
+  const service = createLocalService({ databasePath: join(directory, 'history.sqlite'), port: 0, schedulerEnabled });
   const health = await service.start();
-  const running = { stop: service.stop, baseUrl: `http://${LOCAL_SERVICE_HOST}:${health.port}`, directory };
+  const running = { stop: service.stop, schedulerStatus: service.schedulerStatus, baseUrl: `http://${LOCAL_SERVICE_HOST}:${health.port}`, directory };
   services.push(running);
   return running;
 };
@@ -42,7 +44,17 @@ describe('local manual-run service', () => {
 
     expect(health.host).toBe(LOCAL_SERVICE_HOST);
     expect(health.persistence.available).toBe(true);
+    expect(health.scheduler).toMatchObject({ enabled: false, timezone: 'America/Toronto' });
     expect(history.runs).toEqual([]);
+  });
+
+  it('reports scheduler lifecycle status and clears its timer when stopped', async () => {
+    const service = await startService(true);
+    const health = await fetch(`${service.baseUrl}/health`).then((response) => response.json());
+
+    expect(health.scheduler).toMatchObject({ enabled: true, running: true, configuredSchedule: ['Monday-Friday 13:01', 'Sunday-Friday 21:01'] });
+    await service.stop();
+    expect(service.schedulerStatus().running).toBe(false);
   });
 
   it('allows only local Vite preflight requests without changing its localhost bind', async () => {

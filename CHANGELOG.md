@@ -1,5 +1,11 @@
 # Changelog
 
+## Local Synthetic Scheduler
+
+- Added an in-process `America/Toronto` scheduler for the approved Monday-Friday 13:01 and Sunday-Friday 21:01 fixture slots.
+- Reused the deterministic fixture pipeline and SQLite run-key idempotency, with completed-candle protection and scheduler status in health.
+- No notifications, live data, browser polling, or trade execution behavior was added.
+
 ## Read-Only Analysis History
 
 - Added a compact dashboard overlay for local persisted analysis history and immutable report detail.

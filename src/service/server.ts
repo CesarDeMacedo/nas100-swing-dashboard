@@ -1,11 +1,9 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
-import { randomUUID } from 'node:crypto';
 
-import { buildDashboardState } from '../application/buildDashboardState';
-import { buildSwingReport } from '../application/buildSwingReport';
-import { currentAnalysisSource, currentCandleDatasetSource } from '../domain/fixtures';
 import { AnalysisRepository, defaultPersistencePath, type StoredAnalysisRun } from '../persistence/analysisRepository';
-import { AnalysisReportSchema, CandleDatasetSchema } from '../schemas';
+import { runSyntheticFixtureAnalysis } from './fixtureRun';
+import { FixtureScheduler, type SchedulerStatus } from './scheduler/fixtureScheduler';
+import { parseSchedulerEnabled } from './scheduler/torontoSchedule';
 
 export const LOCAL_SERVICE_HOST = '127.0.0.1';
 export const DEFAULT_SERVICE_PORT = 4310;
@@ -14,6 +12,8 @@ const LOCAL_VITE_ORIGINS = new Set(['http://localhost:5173', 'http://127.0.0.1:5
 type LocalServiceOptions = {
   databasePath?: string;
   port?: number;
+  schedulerEnabled?: boolean;
+  schedulerIntervalMs?: number;
 };
 
 type ServiceHealth = {
@@ -22,11 +22,13 @@ type ServiceHealth = {
   host: typeof LOCAL_SERVICE_HOST;
   port: number;
   persistence: { available: boolean; path: string };
+  scheduler: SchedulerStatus;
 };
 
 type LocalService = {
   start: () => Promise<ServiceHealth>;
   stop: () => Promise<void>;
+  schedulerStatus: () => SchedulerStatus;
 };
 
 const setCorsHeaders = (request: IncomingMessage, response: ServerResponse) => {
@@ -45,7 +47,7 @@ const json = (response: ServerResponse, statusCode: number, payload: unknown) =>
 const error = (response: ServerResponse, statusCode: number, code: string, message: string) =>
   json(response, statusCode, { error: { code, message } });
 
-const summary = (run: StoredAnalysisRun, report: ReturnType<typeof buildSwingReport>, alreadyExists: boolean) => ({
+const summary = (run: StoredAnalysisRun, report: NonNullable<ReturnType<typeof runSyntheticFixtureAnalysis>['report']>, alreadyExists: boolean) => ({
   id: run.id,
   runKey: run.runKey,
   action: report.action,
@@ -57,9 +59,6 @@ const summary = (run: StoredAnalysisRun, report: ReturnType<typeof buildSwingRep
   persistedAt: run.persistedAt,
   alreadyExists,
 });
-
-const fixtureRunKey = (report: ReturnType<typeof buildSwingReport>, strategyVersion: string) =>
-  [report.instrument, report.timeframe, report.sourceCandleTime ?? 'unavailable', report.reportVersion, strategyVersion, 'fixture'].join(':');
 
 const parseLimit = (value: string | null) => {
   if (value === null) return 20;
@@ -77,9 +76,19 @@ const resolvePort = (value: string | undefined) => {
 export function createLocalService(options: LocalServiceOptions = {}): LocalService {
   const databasePath = options.databasePath ?? process.env.NAS100_DASHBOARD_DB_PATH ?? defaultPersistencePath();
   const configuredPort = options.port ?? resolvePort(process.env.NAS100_DASHBOARD_PORT);
+  const schedulerEnabled = options.schedulerEnabled ?? parseSchedulerEnabled(process.env.NAS100_DASHBOARD_SCHEDULER_ENABLED);
   let repository: AnalysisRepository | null = null;
   let server: Server | null = null;
   let boundPort = configuredPort;
+  const scheduler = new FixtureScheduler({
+    enabled: schedulerEnabled,
+    intervalMs: options.schedulerIntervalMs,
+    run: async () => {
+      if (!repository) throw new Error('Local persistence is unavailable.');
+      const result = runSyntheticFixtureAnalysis(repository);
+      return { outcome: result.outcome, runKey: result.run.runKey, message: result.message };
+    },
+  });
 
   const health = (): ServiceHealth => ({
     service: 'nas100-swing-dashboard',
@@ -87,6 +96,7 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
     host: LOCAL_SERVICE_HOST,
     port: boundPort,
     persistence: { available: repository !== null, path: databasePath },
+    scheduler: scheduler.status(),
   });
 
   const requestHandler = (request: IncomingMessage, response: ServerResponse) => {
@@ -113,30 +123,12 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
       }
 
       if (request.method === 'POST' && url.pathname === '/runs/manual-fixture') {
-        const analysis = AnalysisReportSchema.parse(currentAnalysisSource);
-        const candles = CandleDatasetSchema.parse(currentCandleDatasetSource);
-        const dashboardState = buildDashboardState(analysis, candles);
-        const report = buildSwingReport(dashboardState);
-        const runKey = fixtureRunKey(report, analysis.strategyVersion);
-        const existing = activeRepository.getRunByKey(runKey);
-        if (existing?.report) {
-          json(response, 200, summary(existing.run, existing.report, true));
+        const result = runSyntheticFixtureAnalysis(activeRepository);
+        if (!result.report) {
+          error(response, 409, 'FIXTURE_RUN_BLOCKED', result.message ?? 'Synthetic fixture analysis could not produce a completed report.');
           return;
         }
-
-        const now = new Date().toISOString();
-        const run = activeRepository.saveCompletedRun(
-          {
-            id: randomUUID(),
-            runKey,
-            startedAt: now,
-            completedAt: now,
-            status: 'COMPLETED',
-            source: 'fixture',
-          },
-          report,
-        );
-        json(response, 201, summary(run, report, false));
+        json(response, result.outcome === 'created' ? 201 : 200, summary(result.run, result.report, result.outcome === 'already_exists'));
         return;
       }
 
@@ -189,9 +181,10 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
           server.once('error', reject);
           server.listen(configuredPort, LOCAL_SERVICE_HOST, () => {
             const address = server?.address();
-            if (address && typeof address !== 'string') boundPort = address.port;
-            server?.off('error', reject);
-            resolve(health());
+          if (address && typeof address !== 'string') boundPort = address.port;
+          server?.off('error', reject);
+          scheduler.start();
+          resolve(health());
           });
         } catch (cause) {
           reject(cause);
@@ -199,6 +192,7 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
       }),
     stop: () =>
       new Promise((resolve, reject) => {
+        scheduler.stop();
         const activeServer = server;
         server = null;
         if (!activeServer) {
@@ -213,6 +207,7 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
           cause ? reject(cause) : resolve();
         });
       }),
+    schedulerStatus: () => scheduler.status(),
   };
 }
 

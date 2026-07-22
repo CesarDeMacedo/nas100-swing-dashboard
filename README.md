@@ -4,11 +4,11 @@ The NAS100 Swing Intelligence Dashboard is a decision-support interface for revi
 
 ## Current Status
 
-Completed through the manual local-service milestone.
+Completed through the local synthetic scheduler milestone.
 
 - Deterministic strategy engine implemented.
 - The dashboard and Markdown report use the same calculated `DashboardState`.
-- 178 tests currently pass.
+- 192 tests currently pass.
 - All market data remains synthetic.
 - The application has no trade execution capability.
 
@@ -21,15 +21,19 @@ Completed through the manual local-service milestone.
 
 For local workflow validation, start `npm run service` first, then run `npm run dev` for the dashboard. Set `VITE_NAS100_SERVICE_URL` only when the service uses a different local URL.
 
-- `GET /health` reports local persistence availability.
+- `GET /health` reports local persistence and scheduler availability.
 - `POST /runs/manual-fixture` runs the validated synthetic fixture pipeline and persists one immutable completed report.
 - `GET /runs?limit=20` lists recent runs; `GET /runs/:runKey` returns a stored immutable run and report.
 - Repeating the same fixture run returns the existing run rather than creating a duplicate.
-- `NAS100_DASHBOARD_DB_PATH` overrides the SQLite path; `NAS100_DASHBOARD_PORT` overrides the port.
+- `NAS100_DASHBOARD_DB_PATH` overrides the SQLite path; `NAS100_DASHBOARD_PORT` overrides the port; `NAS100_DASHBOARD_SCHEDULER_ENABLED=false` disables scheduled fixture runs.
 
 The dashboard includes a compact, read-only Analysis history overlay that loads local records only when opened. It requires `npm run service`, does not alter fixture dashboard values, and does not create new analysis runs.
 
-Scheduling is not implemented. No live market-data provider exists yet.
+## Local Synthetic Scheduler
+
+While `npm run service` is running, the in-process scheduler evaluates `America/Toronto` time every 15 seconds and runs only these one-minute post-close slots: Monday-Friday at 1:01 p.m., and Sunday-Friday at 9:01 p.m. It skips Saturday and the Sunday 1:01 p.m. slot.
+
+Each slot runs the same deterministic synthetic fixture pipeline used by the manual control. The latest H4 candle must be explicitly completed before an immutable completed report can be saved. SQLite run-key uniqueness makes repeated attempts idempotent, including a restart during the same scheduled minute. This is local-only synthetic validation; notifications and live market data are not implemented.
 
 The dashboard remains driven by synthetic fixture data. The header control only saves the existing deterministic fixture analysis locally.
 
