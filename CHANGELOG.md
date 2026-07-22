@@ -1,5 +1,23 @@
 # Changelog
 
+## Browser Manual-Run Control
+
+- Added a typed native-fetch client for the local analysis service and a compact dashboard header control.
+- The control reports local availability and manual fixture persistence results without changing the calculated fixture dashboard state.
+- Added localhost Vite CORS/preflight support; no scheduler or history UI was added.
+
+## Manual Local Service
+
+- Added a localhost-only manual fixture service with health, run creation, history, and run lookup endpoints.
+- Reuses the deterministic dashboard/report pipeline and persists immutable reports through `AnalysisRepository`.
+- Added run-key idempotency and temporary SQLite service tests; scheduling remains unimplemented.
+
+## Local persistence foundation
+
+- Added a local SQLite repository for immutable analysis reports and analysis-run records.
+- Added transactional persistence, unique run-key protection, durable reopening, and repository tests.
+- Kept persistence disconnected from the browser dashboard, scheduling, notifications, live data, AI, and packaging.
+
 ## Phase 8C Checkpoint
 
 - Completed the deterministic NAS100 strategy and report pipeline through Phase 8C.

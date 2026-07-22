@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { AppShell } from './components/AppShell';
 import { Dashboard } from './components/Dashboard';
@@ -9,17 +9,20 @@ import { parseCandleDataset } from './domain/candles';
 import { buildDashboardState } from './application/buildDashboardState';
 import { currentCandleDatasetSource } from './domain/fixtures';
 import { useDashboardStore } from './store/dashboardStore';
+import { localAnalysisService, type LocalAnalysisServiceClient, type ManualRunResult, type ServiceAvailability } from './serviceClient/localAnalysisService';
 
 type AppProps = {
   analysisSource?: unknown;
   candleSource?: unknown;
   loading?: boolean;
+  serviceClient?: LocalAnalysisServiceClient;
 };
 
 export default function App({
   analysisSource = currentAnalysisSource,
   candleSource = currentCandleDatasetSource,
   loading = false,
+  serviceClient = localAnalysisService,
 }: AppProps) {
   const result = useMemo(() => parseAnalysis(analysisSource), [analysisSource]);
   const candleResult = useMemo(() => parseCandleDataset(candleSource), [candleSource]);
@@ -28,6 +31,9 @@ export default function App({
   const dashboardAnalysis = result.success ? result.analysis : null;
   const setReady = useDashboardStore((state) => state.setReady);
   const setError = useDashboardStore((state) => state.setError);
+  const [serviceAvailability, setServiceAvailability] = useState<'checking' | ServiceAvailability['kind']>('checking');
+  const [manualRunState, setManualRunState] = useState<'idle' | 'running' | ManualRunResult['kind']>('idle');
+  const [manualRunResult, setManualRunResult] = useState<ManualRunResult | null>(null);
 
   useEffect(() => {
     if (result.success) {
@@ -36,6 +42,23 @@ export default function App({
       setError();
     }
   }, [result, setError, setReady]);
+
+  useEffect(() => {
+    let active = true;
+    serviceClient.checkHealth().then((availability) => {
+      if (active) setServiceAvailability(availability.kind);
+    });
+    return () => {
+      active = false;
+    };
+  }, [serviceClient]);
+
+  const runManualFixture = async () => {
+    setManualRunState('running');
+    const manualRun = await serviceClient.runManualFixture();
+    setManualRunResult(manualRun);
+    setManualRunState(manualRun.kind);
+  };
 
   return (
     <AppShell>
@@ -48,6 +71,10 @@ export default function App({
           analysis={dashboardAnalysis}
           candleResult={candleResult}
           dashboardState={useCalculatedDashboardState ? (dashboardState ?? undefined) : undefined}
+          serviceAvailability={serviceAvailability}
+          manualRunState={manualRunState}
+          manualRunResult={manualRunResult}
+          onManualRun={runManualFixture}
         />
       ) : null}
     </AppShell>

@@ -168,6 +168,18 @@ Phase 8C implemented `src/application/buildSwingReport.ts`. It creates a version
 - Still mocked: real provider data, SQLite durability, platform notifications, export.
 - Stop point: scheduler timeline and log review.
 
+## Persistence milestone: local SQLite foundation (implemented)
+
+This cost-conscious foundation is intentionally earlier than the scheduler and does not expose a service or UI. `src/persistence/analysisRepository.ts` uses Node's built-in `node:sqlite` module, so no native dependency was added. It creates migrations plus immutable `analysis_reports` and `analysis_runs` tables, enables foreign keys, WAL mode, and a busy timeout, and persists completed report/run pairs transactionally. Blocked and failed runs can be recorded without a report. `run_key` is unique to reserve the scheduler's future idempotency boundary. The default database location is `%LOCALAPPDATA%\\NAS100 Swing Dashboard\\nas100-swing-dashboard.sqlite`; no database is created until a future local service explicitly opens the repository. Tests cover transactions, retrieval, ordering, duplicate run keys, reopening, and safe argument validation. Scheduling, notifications, live data, AI, packaging, UI history, and browser access remain out of scope.
+
+## Manual local-service milestone (implemented)
+
+`src/service/server.ts` adds a manual-only Node HTTP boundary around the existing validated synthetic pipeline, `DashboardState`, `SwingReport`, and `AnalysisRepository`. It binds exclusively to `127.0.0.1` on port `4310` by default, creating the local SQLite database only at service startup. `POST /runs/manual-fixture` persists an immutable fixture report and uses a run key composed of instrument, timeframe, source candle time, report version, strategy version, and `fixture`; repeated requests return the existing run. `GET /health`, `GET /runs`, and `GET /runs/:runKey` return JSON only. `NAS100_DASHBOARD_DB_PATH` and `NAS100_DASHBOARD_PORT` are the sole environment overrides. Scheduling, notifications, live data, AI, packaging, and a UI history screen remain out of scope.
+
+## Browser-to-local-service validation milestone (implemented)
+
+The fixture-driven dashboard now checks `GET /health` and can call `POST /runs/manual-fixture` through `src/serviceClient/localAnalysisService.ts`. `App.tsx` owns the request state, while the header control only presents availability and manual persistence results. The Vite dashboard uses `VITE_NAS100_SERVICE_URL` or `http://127.0.0.1:4310`; start `npm run service` before `npm run dev`. The service allows only local Vite development origins and remains bound to `127.0.0.1`. This does not replace fixture dashboard data, add a history UI, or implement scheduling.
+
 ## Phase 10: SQLite history
 
 - Objective: persist immutable report history and run records locally.

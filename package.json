@@ -10,6 +10,8 @@
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run",
     "test:watch": "vitest",
+    "service": "tsx src/service/server.ts",
+    "service:dev": "tsx watch src/service/server.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "preview": "vite preview"
@@ -41,6 +43,7 @@
     "jsdom": "latest",
     "prettier": "latest",
     "tailwindcss": "latest",
+    "tsx": "^4.23.1",
     "typescript": "latest",
     "typescript-eslint": "latest",
     "vite": "latest",

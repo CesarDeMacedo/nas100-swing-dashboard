@@ -1,8 +1,10 @@
-import { cleanup, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
+import { vi } from 'vitest';
 
 import App from './App';
+import type { LocalAnalysisServiceClient, ManualRunResult } from './serviceClient/localAnalysisService';
 import { getActionState } from './domain/actionStates';
 import { ActionSchema } from './domain/analysis';
 import {
@@ -24,6 +26,77 @@ const readSourceTree = (directory: string): string =>
     .join('\n');
 
 describe('dashboard rendering', () => {
+  const run: ManualRunResult = {
+    kind: 'succeeded',
+    run: {
+      id: 'run-1',
+      runKey: 'fixture-run',
+      action: 'WAIT_FOR_PULLBACK',
+      direction: 'long',
+      score: 38,
+      grade: 'D',
+      isActionable: false,
+      sourceCandleTime: '2026-07-22T01:00:00.000Z',
+      persistedAt: '2026-07-22T01:01:00.000Z',
+      alreadyExists: false,
+    },
+  };
+  const client = (checkHealth: LocalAnalysisServiceClient['checkHealth'], runManualFixture: LocalAnalysisServiceClient['runManualFixture']): LocalAnalysisServiceClient => ({ checkHealth, runManualFixture });
+
+  it('renders local service health and preserves the fixture dashboard while offline', async () => {
+    render(<App serviceClient={client(async () => ({ kind: 'unavailable', message: 'offline' }), async () => ({ kind: 'failed', message: 'offline' }))} />);
+
+    expect(await screen.findByText('Service unavailable')).toBeVisible();
+    expect(screen.getByText('Start the local analysis service to enable manual persistence.')).toBeVisible();
+    expect(screen.getByTestId('dashboard')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Run mock analysis' })).toBeDisabled();
+  });
+
+  it('renders successful and duplicate fixture persistence without changing the dashboard action', async () => {
+    const runManualFixture = vi.fn().mockResolvedValueOnce(run).mockResolvedValueOnce({ ...run, kind: 'already_exists' as const, run: { ...run.run, alreadyExists: true } });
+    render(<App serviceClient={client(async () => ({ kind: 'available' }), runManualFixture)} />);
+
+    const button = await screen.findByRole('button', { name: 'Run mock analysis' });
+    fireEvent.click(button);
+    expect(button).toBeDisabled();
+    expect(await screen.findByText('Mock analysis saved')).toBeVisible();
+    expect(screen.getByLabelText('Current action: WAIT FOR PULLBACK')).toBeVisible();
+
+    fireEvent.click(button);
+    expect(await screen.findByText('Mock analysis already recorded')).toBeVisible();
+  });
+
+  it('renders failed and malformed manual-run states without execution language', async () => {
+    const malformed: ManualRunResult = { kind: 'malformed_response', message: 'Local service returned an invalid manual-run response.' };
+    const runManualFixture = vi.fn().mockResolvedValueOnce({ kind: 'failed' as const, message: 'Manual analysis could not be saved.' }).mockResolvedValueOnce(malformed);
+    render(<App serviceClient={client(async () => ({ kind: 'available' }), runManualFixture)} />);
+
+    const button = await screen.findByRole('button', { name: 'Run mock analysis' });
+    fireEvent.click(button);
+    expect(await screen.findByText('Could not save mock analysis')).toBeVisible();
+    fireEvent.click(button);
+    expect(await screen.findByText('Could not save mock analysis')).toBeVisible();
+    expect(screen.queryByText(/trade executed/i)).not.toBeInTheDocument();
+  });
+
+  it('keeps the compact mock-service utility separate from the title flow', async () => {
+    render(<App serviceClient={client(async () => ({ kind: 'available' }), async () => run)} />);
+
+    const control = await screen.findByLabelText('Synthetic local analysis service');
+    const title = screen.getByRole('heading', { name: 'NAS100 H4 Setup Check' });
+    expect(control).toHaveAttribute('title', 'Synthetic fixture persistence only');
+    expect(title.closest('.dashboard-title-block')).not.toContainElement(control);
+    expect(control).toHaveTextContent('Service online');
+  });
+
+  it('uses compact wide-desktop layout constraints without horizontal overflow rules', () => {
+    const stylesheet = readFileSync(join(process.cwd(), 'src', 'styles.css'), 'utf8');
+    expect(stylesheet).toContain('.dashboard-header');
+    expect(stylesheet).toContain('grid-template-rows: auto minmax(490px, 1fr) auto');
+    expect(stylesheet).toContain('grid-template-rows: repeat(4, max-content)');
+    expect(stylesheet).toContain('overflow-x: hidden');
+  });
+
   it('renders every required action fixture through the centralized banner mapping', () => {
     for (const action of ActionSchema.options) {
       render(<App analysisSource={actionFixtures[action]} />);

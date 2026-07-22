@@ -1,6 +1,7 @@
 import type { SafeAnalysis } from '../domain/analysis';
 import type { CandleDatasetParseResult } from '../domain/candles';
 import type { DashboardState } from '../application/buildDashboardState';
+import type { ManualRunResult, ServiceAvailability } from '../serviceClient/localAnalysisService';
 import { AnalysisSidebar } from './sidebar/AnalysisSidebar';
 import { CandlestickChartPanel } from './chart/CandlestickChartPanel';
 import { DashboardHeader } from './DashboardHeader';
@@ -12,9 +13,13 @@ type DashboardProps = {
   analysis: SafeAnalysis;
   candleResult: CandleDatasetParseResult;
   dashboardState?: DashboardState;
+  serviceAvailability?: 'checking' | ServiceAvailability['kind'];
+  manualRunState?: 'idle' | 'running' | ManualRunResult['kind'];
+  manualRunResult?: ManualRunResult | null;
+  onManualRun?: () => void;
 };
 
-export function Dashboard({ analysis, candleResult, dashboardState }: DashboardProps) {
+export function Dashboard({ analysis, candleResult, dashboardState, serviceAvailability, manualRunState, manualRunResult, onManualRun }: DashboardProps) {
   const state = dashboardState;
 
   return (
@@ -24,6 +29,10 @@ export function Dashboard({ analysis, candleResult, dashboardState }: DashboardP
           displayName={analysis.displayName}
           instrument={analysis.instrument}
           timeframe={analysis.timeframe}
+          serviceAvailability={serviceAvailability}
+          manualRunState={manualRunState}
+          manualRunResult={manualRunResult}
+          onManualRun={onManualRun}
         />
         <PrimaryActionBanner
           action={state?.action ?? analysis.action}
