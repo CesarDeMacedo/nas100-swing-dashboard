@@ -24,9 +24,57 @@ export type ManualRunResult =
   | { kind: 'failed'; message: string }
   | { kind: 'malformed_response'; message: string };
 
+export type PersistedRun = {
+  id: string;
+  runKey: string;
+  completedAt: string;
+  status: string;
+  source: string;
+  persistedAt: string;
+  reportId: string | null;
+};
+
+export type AnalysisHistorySummary = {
+  action: string;
+  direction: string;
+  score: number | null;
+  grade: string | null;
+  sourceCandleTime: string | null;
+  isActionable: boolean;
+};
+
+export type AnalysisHistoryItem = { run: PersistedRun; report: AnalysisHistorySummary | null };
+
+export type ImmutableReportDetail = {
+  action: string;
+  direction: string;
+  score: number | null;
+  grade: string | null;
+  primaryReason: string;
+  entryTrigger: string | null;
+  stopPrice: number | null;
+  targets: number[];
+  estimatedRewardRisk: number | null;
+  sourceCandleTime: string | null;
+  isActionable: boolean;
+};
+
+export type HistoryResult =
+  | { kind: 'succeeded'; runs: AnalysisHistoryItem[] }
+  | { kind: 'empty'; runs: [] }
+  | { kind: 'failed'; message: string }
+  | { kind: 'malformed_response'; message: string };
+
+export type RunDetailResult =
+  | { kind: 'succeeded'; item: AnalysisHistoryItem; report: ImmutableReportDetail }
+  | { kind: 'failed'; message: string }
+  | { kind: 'malformed_response'; message: string };
+
 export type LocalAnalysisServiceClient = {
   checkHealth: () => Promise<ServiceAvailability>;
   runManualFixture: () => Promise<ManualRunResult>;
+  listRecentRuns: (limit: number) => Promise<HistoryResult>;
+  getRunByKey: (runKey: string) => Promise<RunDetailResult>;
 };
 
 const serviceUrl = () =>
@@ -49,6 +97,24 @@ const isManualRunSummary = (value: unknown): value is ManualRunSummary => {
     typeof run.persistedAt === 'string' &&
     typeof run.alreadyExists === 'boolean'
   );
+};
+
+const isPersistedRun = (value: unknown): value is PersistedRun => {
+  if (!value || typeof value !== 'object') return false;
+  const run = value as Record<string, unknown>;
+  return typeof run.id === 'string' && typeof run.runKey === 'string' && typeof run.completedAt === 'string' && typeof run.status === 'string' && typeof run.source === 'string' && typeof run.persistedAt === 'string' && (typeof run.reportId === 'string' || run.reportId === null);
+};
+
+const isImmutableReportDetail = (value: unknown): value is ImmutableReportDetail => {
+  if (!value || typeof value !== 'object') return false;
+  const report = value as Record<string, unknown>;
+  return typeof report.action === 'string' && typeof report.direction === 'string' && (typeof report.score === 'number' || report.score === null) && (typeof report.grade === 'string' || report.grade === null) && typeof report.primaryReason === 'string' && (typeof report.entryTrigger === 'string' || report.entryTrigger === null) && (typeof report.stopPrice === 'number' || report.stopPrice === null) && Array.isArray(report.targets) && report.targets.every((target) => typeof target === 'number') && (typeof report.estimatedRewardRisk === 'number' || report.estimatedRewardRisk === null) && (typeof report.sourceCandleTime === 'string' || report.sourceCandleTime === null) && typeof report.isActionable === 'boolean';
+};
+
+const isAnalysisHistorySummary = (value: unknown): value is AnalysisHistorySummary => {
+  if (!value || typeof value !== 'object') return false;
+  const report = value as Record<string, unknown>;
+  return typeof report.action === 'string' && typeof report.direction === 'string' && (typeof report.score === 'number' || report.score === null) && (typeof report.grade === 'string' || report.grade === null) && (typeof report.sourceCandleTime === 'string' || report.sourceCandleTime === null) && typeof report.isActionable === 'boolean';
 };
 
 const responseJson = async (response: Response): Promise<unknown> => {
@@ -95,6 +161,33 @@ export function createLocalAnalysisServiceClient(baseUrl = serviceUrl()): LocalA
         return payload.alreadyExists ? { kind: 'already_exists', run: payload } : { kind: 'succeeded', run: payload };
       } catch {
         return { kind: 'failed', message: 'Start the local analysis service to enable manual persistence.' };
+      }
+    },
+    async listRecentRuns(limit) {
+      try {
+        const response = await request(`/runs?limit=${encodeURIComponent(String(limit))}`);
+        const payload = await responseJson(response);
+        if (!response.ok) return { kind: 'failed', message: serviceErrorMessage(payload, 'Could not load local analysis history.') };
+        if (!payload || typeof payload !== 'object' || !('runs' in payload) || !Array.isArray(payload.runs)) return invalidResponse('Local service returned an invalid history response.');
+        const runs = payload.runs;
+        if (!runs.every((item) => item && typeof item === 'object' && isPersistedRun((item as { run?: unknown }).run) && ((item as { report?: unknown }).report === null || isAnalysisHistorySummary((item as { report?: unknown }).report)))) return invalidResponse('Local service returned an invalid history response.');
+        const items = runs as AnalysisHistoryItem[];
+        return items.length === 0 ? { kind: 'empty', runs: [] } : { kind: 'succeeded', runs: items };
+      } catch {
+        return { kind: 'failed', message: 'Start the local analysis service to view analysis history.' };
+      }
+    },
+    async getRunByKey(runKey) {
+      try {
+        const response = await request(`/runs/${encodeURIComponent(runKey)}`);
+        const payload = await responseJson(response);
+        if (!response.ok) return { kind: 'failed', message: serviceErrorMessage(payload, 'Could not load the stored analysis report.') };
+        if (!payload || typeof payload !== 'object') return invalidResponse('Local service returned an invalid analysis-detail response.');
+        const item = payload as { run?: unknown; report?: unknown };
+        if (!isPersistedRun(item.run) || !isImmutableReportDetail(item.report)) return invalidResponse('Local service returned an invalid analysis-detail response.');
+        return { kind: 'succeeded', item: { run: item.run, report: item.report }, report: item.report };
+      } catch {
+        return { kind: 'failed', message: 'Start the local analysis service to view analysis history.' };
       }
     },
   };

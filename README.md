@@ -23,11 +23,13 @@ For local workflow validation, start `npm run service` first, then run `npm run 
 
 - `GET /health` reports local persistence availability.
 - `POST /runs/manual-fixture` runs the validated synthetic fixture pipeline and persists one immutable completed report.
-- `GET /runs?limit=20` lists recent runs; `GET /runs/:runKey` returns a stored run and report.
+- `GET /runs?limit=20` lists recent runs; `GET /runs/:runKey` returns a stored immutable run and report.
 - Repeating the same fixture run returns the existing run rather than creating a duplicate.
 - `NAS100_DASHBOARD_DB_PATH` overrides the SQLite path; `NAS100_DASHBOARD_PORT` overrides the port.
 
-Scheduling is not implemented. The browser dashboard has no history UI yet.
+The dashboard includes a compact, read-only Analysis history overlay that loads local records only when opened. It requires `npm run service`, does not alter fixture dashboard values, and does not create new analysis runs.
+
+Scheduling is not implemented. No live market-data provider exists yet.
 
 The dashboard remains driven by synthetic fixture data. The header control only saves the existing deterministic fixture analysis locally.
 

@@ -9,7 +9,7 @@ import { parseCandleDataset } from './domain/candles';
 import { buildDashboardState } from './application/buildDashboardState';
 import { currentCandleDatasetSource } from './domain/fixtures';
 import { useDashboardStore } from './store/dashboardStore';
-import { localAnalysisService, type LocalAnalysisServiceClient, type ManualRunResult, type ServiceAvailability } from './serviceClient/localAnalysisService';
+import { localAnalysisService, type HistoryResult, type LocalAnalysisServiceClient, type ManualRunResult, type RunDetailResult, type ServiceAvailability } from './serviceClient/localAnalysisService';
 
 type AppProps = {
   analysisSource?: unknown;
@@ -34,6 +34,10 @@ export default function App({
   const [serviceAvailability, setServiceAvailability] = useState<'checking' | ServiceAvailability['kind']>('checking');
   const [manualRunState, setManualRunState] = useState<'idle' | 'running' | ManualRunResult['kind']>('idle');
   const [manualRunResult, setManualRunResult] = useState<ManualRunResult | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [history, setHistory] = useState<HistoryResult | { kind: 'loading' } | null>(null);
+  const [historyDetail, setHistoryDetail] = useState<RunDetailResult | { kind: 'loading' } | null>(null);
+  const [selectedHistoryRunKey, setSelectedHistoryRunKey] = useState<string | null>(null);
 
   useEffect(() => {
     if (result.success) {
@@ -60,6 +64,24 @@ export default function App({
     setManualRunState(manualRun.kind);
   };
 
+  const loadHistory = async () => {
+    setHistory({ kind: 'loading' });
+    setHistoryDetail(null);
+    setSelectedHistoryRunKey(null);
+    setHistory(await serviceClient.listRecentRuns(10));
+  };
+
+  const openHistory = () => {
+    setHistoryOpen(true);
+    void loadHistory();
+  };
+
+  const selectHistoryRun = async (runKey: string) => {
+    setSelectedHistoryRunKey(runKey);
+    setHistoryDetail({ kind: 'loading' });
+    setHistoryDetail(await serviceClient.getRunByKey(runKey));
+  };
+
   return (
     <AppShell>
       {loading ? <LoadingState /> : null}
@@ -75,6 +97,14 @@ export default function App({
           manualRunState={manualRunState}
           manualRunResult={manualRunResult}
           onManualRun={runManualFixture}
+          historyOpen={historyOpen}
+          history={history}
+          historyDetail={historyDetail}
+          selectedHistoryRunKey={selectedHistoryRunKey}
+          onOpenHistory={openHistory}
+          onCloseHistory={() => setHistoryOpen(false)}
+          onRefreshHistory={() => void loadHistory()}
+          onSelectHistoryRun={selectHistoryRun}
         />
       ) : null}
     </AppShell>

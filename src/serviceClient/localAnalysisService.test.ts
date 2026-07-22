@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createLocalAnalysisServiceClient } from './localAnalysisService';
 
 const run = { id: 'run-1', runKey: 'NAS100:H4:time:1.0.0:strategy:fixture', action: 'WAIT_FOR_PULLBACK', direction: 'long', score: 38, grade: 'D', isActionable: false, sourceCandleTime: '2026-07-21T21:00:00.000Z', persistedAt: '2026-07-22T00:00:00.000Z', alreadyExists: false };
+const history = { runs: [{ run: { id: 'run-1', runKey: 'fixture-run', completedAt: '2026-07-22T01:01:00.000Z', status: 'COMPLETED', source: 'fixture', persistedAt: '2026-07-22T01:01:01.000Z', reportId: 'report-1' }, report: { action: 'WAIT_FOR_PULLBACK', direction: 'long', score: 38, grade: 'D', sourceCandleTime: '2026-07-22T01:00:00.000Z', isActionable: false } }] };
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -26,5 +27,19 @@ describe('localAnalysisService', () => {
     await expect(createLocalAnalysisServiceClient('http://service').runManualFixture()).resolves.toMatchObject({ kind: 'already_exists' });
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 201 })));
     await expect(createLocalAnalysisServiceClient('http://service').runManualFixture()).resolves.toMatchObject({ kind: 'malformed_response' });
+  });
+
+  it('loads typed history and immutable report details safely', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValueOnce(new Response(JSON.stringify(history), { status: 200 })).mockResolvedValueOnce(new Response(JSON.stringify({ ...history.runs[0], report: { ...history.runs[0].report, primaryReason: 'Pending pullback.', entryTrigger: null, stopPrice: null, targets: [], estimatedRewardRisk: null } }), { status: 200 })));
+    const client = createLocalAnalysisServiceClient('http://service');
+    await expect(client.listRecentRuns(10)).resolves.toMatchObject({ kind: 'succeeded', runs: history.runs });
+    await expect(client.getRunByKey('fixture-run')).resolves.toMatchObject({ kind: 'succeeded', report: { primaryReason: 'Pending pullback.' } });
+  });
+
+  it('handles empty, failed, and malformed history responses', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ runs: [] }), { status: 200 })));
+    await expect(createLocalAnalysisServiceClient('http://service').listRecentRuns(10)).resolves.toMatchObject({ kind: 'empty' });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 200 })));
+    await expect(createLocalAnalysisServiceClient('http://service').listRecentRuns(10)).resolves.toMatchObject({ kind: 'malformed_response' });
   });
 });

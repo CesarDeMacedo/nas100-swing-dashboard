@@ -8,6 +8,8 @@ import { DashboardHeader } from './DashboardHeader';
 import { MetricsFooter } from './MetricsFooter';
 import { PrimaryActionBanner } from './PrimaryActionBanner';
 import { SetupSummary } from './SetupSummary';
+import { AnalysisHistoryPanel } from './AnalysisHistoryPanel';
+import type { HistoryResult, RunDetailResult } from '../serviceClient/localAnalysisService';
 
 type DashboardProps = {
   analysis: SafeAnalysis;
@@ -17,9 +19,17 @@ type DashboardProps = {
   manualRunState?: 'idle' | 'running' | ManualRunResult['kind'];
   manualRunResult?: ManualRunResult | null;
   onManualRun?: () => void;
+  historyOpen?: boolean;
+  history?: HistoryResult | { kind: 'loading' } | null;
+  historyDetail?: RunDetailResult | { kind: 'loading' } | null;
+  selectedHistoryRunKey?: string | null;
+  onOpenHistory?: () => void;
+  onCloseHistory?: () => void;
+  onRefreshHistory?: () => void;
+  onSelectHistoryRun?: (runKey: string) => void;
 };
 
-export function Dashboard({ analysis, candleResult, dashboardState, serviceAvailability, manualRunState, manualRunResult, onManualRun }: DashboardProps) {
+export function Dashboard({ analysis, candleResult, dashboardState, serviceAvailability, manualRunState, manualRunResult, onManualRun, historyOpen = false, history, historyDetail, selectedHistoryRunKey = null, onOpenHistory, onCloseHistory, onRefreshHistory, onSelectHistoryRun }: DashboardProps) {
   const state = dashboardState;
 
   return (
@@ -33,6 +43,7 @@ export function Dashboard({ analysis, candleResult, dashboardState, serviceAvail
           manualRunState={manualRunState}
           manualRunResult={manualRunResult}
           onManualRun={onManualRun}
+          onOpenHistory={onOpenHistory}
         />
         <PrimaryActionBanner
           action={state?.action ?? analysis.action}
@@ -59,6 +70,7 @@ export function Dashboard({ analysis, candleResult, dashboardState, serviceAvail
         <AnalysisSidebar analysis={analysis} dashboardState={state} />
       </div>
       <MetricsFooter analysis={analysis} dashboardState={state} />
+      {onCloseHistory && onRefreshHistory && onSelectHistoryRun ? <AnalysisHistoryPanel open={historyOpen} history={history ?? null} detail={historyDetail ?? null} selectedRunKey={selectedHistoryRunKey} onClose={onCloseHistory} onRefresh={onRefreshHistory} onSelect={onSelectHistoryRun} /> : null}
     </div>
   );
 }

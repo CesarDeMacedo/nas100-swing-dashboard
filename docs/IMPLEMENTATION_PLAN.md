@@ -180,6 +180,10 @@ This cost-conscious foundation is intentionally earlier than the scheduler and d
 
 The fixture-driven dashboard now checks `GET /health` and can call `POST /runs/manual-fixture` through `src/serviceClient/localAnalysisService.ts`. `App.tsx` owns the request state, while the header control only presents availability and manual persistence results. The Vite dashboard uses `VITE_NAS100_SERVICE_URL` or `http://127.0.0.1:4310`; start `npm run service` before `npm run dev`. The service allows only local Vite development origins and remains bound to `127.0.0.1`. This does not replace fixture dashboard data, add a history UI, or implement scheduling.
 
+## Read-only browser history milestone (implemented)
+
+The dashboard now exposes a compact Analysis history overlay using only `GET /runs?limit=10` and `GET /runs/:runKey` through the typed local service client. The overlay lazy-loads local records, supports explicit refresh, and presents immutable report detail without recalculating or changing the fixture-driven dashboard state. It requires `npm run service`; scheduling, live data, and any write action beyond the existing manual fixture control remain out of scope.
+
 ## Phase 10: SQLite history
 
 - Objective: persist immutable report history and run records locally.

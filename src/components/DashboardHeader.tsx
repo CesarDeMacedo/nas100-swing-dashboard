@@ -8,9 +8,10 @@ type DashboardHeaderProps = Pick<Analysis, 'displayName' | 'instrument' | 'timef
   manualRunState?: 'idle' | 'running' | ManualRunResult['kind'];
   manualRunResult?: ManualRunResult | null;
   onManualRun?: () => void;
+  onOpenHistory?: () => void;
 };
 
-export function DashboardHeader({ displayName, instrument, timeframe, serviceAvailability, manualRunState, manualRunResult, onManualRun }: DashboardHeaderProps) {
+export function DashboardHeader({ displayName, instrument, timeframe, serviceAvailability, manualRunState, manualRunResult, onManualRun, onOpenHistory }: DashboardHeaderProps) {
   const titleTimeframe = formatTimeframeLabel(timeframe);
 
   return (
@@ -26,7 +27,7 @@ export function DashboardHeader({ displayName, instrument, timeframe, serviceAva
       </p>
       </div>
       {serviceAvailability && manualRunState && onManualRun ? (
-        <LocalServiceControl availability={serviceAvailability} runState={manualRunState} result={manualRunResult ?? null} onRun={onManualRun} />
+        <LocalServiceControl availability={serviceAvailability} runState={manualRunState} result={manualRunResult ?? null} onRun={onManualRun} onOpenHistory={onOpenHistory} />
       ) : null}
     </div>
   );

@@ -5,6 +5,7 @@ type LocalServiceControlProps = {
   runState: 'idle' | 'running' | ManualRunResult['kind'];
   result: ManualRunResult | null;
   onRun: () => void;
+  onOpenHistory?: () => void;
 };
 
 const statusLabel = (availability: LocalServiceControlProps['availability']) => {
@@ -19,7 +20,7 @@ const runMessage = (result: ManualRunResult | null) => {
   return result.kind === 'already_exists' ? 'Mock analysis already recorded' : 'Mock analysis saved';
 };
 
-export function LocalServiceControl({ availability, runState, result, onRun }: LocalServiceControlProps) {
+export function LocalServiceControl({ availability, runState, result, onRun, onOpenHistory }: LocalServiceControlProps) {
   const unavailable = availability === 'unavailable' || availability === 'malformed_response';
   const running = runState === 'running';
   return (
@@ -31,6 +32,7 @@ export function LocalServiceControl({ availability, runState, result, onRun }: L
       <button type="button" onClick={onRun} disabled={running || unavailable}>
         {running ? 'Saving mock analysis' : 'Run mock analysis'}
       </button>
+      {onOpenHistory ? <button type="button" onClick={onOpenHistory} disabled={unavailable} aria-label="Open analysis history">Analysis history</button> : null}
       {unavailable ? <small className="local-service-control__hint">Start the local analysis service to enable manual persistence.</small> : null}
       {result ? <small className="local-service-control__result" aria-live="polite">{runMessage(result)}</small> : null}
     </section>

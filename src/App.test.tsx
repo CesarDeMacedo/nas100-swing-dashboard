@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { vi } from 'vitest';
 
 import App from './App';
-import type { LocalAnalysisServiceClient, ManualRunResult } from './serviceClient/localAnalysisService';
+import type { HistoryResult, LocalAnalysisServiceClient, ManualRunResult, RunDetailResult } from './serviceClient/localAnalysisService';
 import { getActionState } from './domain/actionStates';
 import { ActionSchema } from './domain/analysis';
 import {
@@ -41,7 +41,9 @@ describe('dashboard rendering', () => {
       alreadyExists: false,
     },
   };
-  const client = (checkHealth: LocalAnalysisServiceClient['checkHealth'], runManualFixture: LocalAnalysisServiceClient['runManualFixture']): LocalAnalysisServiceClient => ({ checkHealth, runManualFixture });
+  const client = (checkHealth: LocalAnalysisServiceClient['checkHealth'], runManualFixture: LocalAnalysisServiceClient['runManualFixture'], listRecentRuns: LocalAnalysisServiceClient['listRecentRuns'] = async () => ({ kind: 'empty', runs: [] }), getRunByKey: LocalAnalysisServiceClient['getRunByKey'] = async () => ({ kind: 'failed', message: 'not selected' })): LocalAnalysisServiceClient => ({ checkHealth, runManualFixture, listRecentRuns, getRunByKey });
+  const historyItem = { run: { id: 'run-1', runKey: 'fixture-run', completedAt: '2026-07-22T01:01:00.000Z', status: 'COMPLETED', source: 'fixture', persistedAt: '2026-07-22T01:01:01.000Z', reportId: 'report-1' }, report: { action: 'WAIT_FOR_PULLBACK', direction: 'long', score: 38, grade: 'D', sourceCandleTime: '2026-07-22T01:00:00.000Z', isActionable: false } };
+  const historyDetail: RunDetailResult = { kind: 'succeeded', item: historyItem, report: { ...historyItem.report, primaryReason: 'Pullback location is pending.', entryTrigger: null, stopPrice: null, targets: [], estimatedRewardRisk: null } };
 
   it('renders local service health and preserves the fixture dashboard while offline', async () => {
     render(<App serviceClient={client(async () => ({ kind: 'unavailable', message: 'offline' }), async () => ({ kind: 'failed', message: 'offline' }))} />);
@@ -87,6 +89,33 @@ describe('dashboard rendering', () => {
     expect(control).toHaveAttribute('title', 'Synthetic fixture persistence only');
     expect(title.closest('.dashboard-title-block')).not.toContainElement(control);
     expect(control).toHaveTextContent('Service online');
+  });
+
+  it('opens, refreshes, selects, and closes read-only local analysis history', async () => {
+    const listRecentRuns = vi.fn<LocalAnalysisServiceClient['listRecentRuns']>().mockResolvedValue({ kind: 'succeeded', runs: [historyItem] } as HistoryResult);
+    const getRunByKey = vi.fn<LocalAnalysisServiceClient['getRunByKey']>().mockResolvedValue(historyDetail);
+    render(<App serviceClient={client(async () => ({ kind: 'available' }), async () => run, listRecentRuns, getRunByKey)} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Open analysis history' }));
+    expect(await screen.findByRole('dialog', { name: 'Analysis history' })).toBeVisible();
+    expect(await screen.findByText('WAIT_FOR_PULLBACK')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: /WAIT_FOR_PULLBACK/ }));
+    expect(await screen.findByText('Pullback location is pending.')).toBeVisible();
+    expect(screen.getAllByText('Not calculated').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Not available').length).toBeGreaterThan(0);
+    expect(screen.getByLabelText('Current action: WAIT FOR PULLBACK')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    expect(listRecentRuns).toHaveBeenCalledTimes(2);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByRole('dialog', { name: 'Analysis history' })).not.toBeInTheDocument();
+  });
+
+  it('shows empty and failed history states without execution wording', async () => {
+    const empty = async () => ({ kind: 'empty' as const, runs: [] as [] });
+    render(<App serviceClient={client(async () => ({ kind: 'available' }), async () => run, empty)} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Open analysis history' }));
+    expect(await screen.findByText('No local analysis runs have been recorded.')).toBeVisible();
+    expect(screen.queryByText(/trade executed/i)).not.toBeInTheDocument();
   });
 
   it('uses compact wide-desktop layout constraints without horizontal overflow rules', () => {

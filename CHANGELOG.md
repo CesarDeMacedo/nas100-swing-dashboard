@@ -1,5 +1,11 @@
 # Changelog
 
+## Read-Only Analysis History
+
+- Added a compact dashboard overlay for local persisted analysis history and immutable report detail.
+- History loads on demand, supports manual refresh, and leaves the fixture dashboard state unchanged.
+- No scheduler, live data, or trade execution behavior was added.
+
 ## Browser Manual-Run Control
 
 - Added a typed native-fetch client for the local analysis service and a compact dashboard header control.
