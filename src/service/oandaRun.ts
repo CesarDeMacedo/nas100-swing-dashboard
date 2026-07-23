@@ -6,6 +6,7 @@ import { classifyDailyRegime } from '../domain/dailyRegime';
 import { calculateMarketLevels, type MarketLevelDirection, type MarketLevels } from '../domain/marketLevels';
 import { buildTechnicalContext, mapCanonicalDailyRegimeToLegacy, type TechnicalContext } from '../domain/technicalContext';
 import { AnalysisRepository, type StoredAnalysisRun } from '../persistence/analysisRepository';
+import { OandaProvider } from '../providers/oanda/oandaProvider';
 import type { OandaDailyCandleResult, OandaH4CandleResult } from '../providers/oanda/types';
 import { AnalysisReportSchema, CandleDatasetSchema, type AnalysisReport, type Candle, type CandleDataset } from '../schemas';
 
@@ -306,4 +307,9 @@ export const runManualOandaAnalysis = (repository: AnalysisRepository, source: O
     });
     return { ...base, outcome: 'failed', run, report: null, message: run.errorMessage ?? undefined };
   }
+};
+
+export const executeManualOandaAnalysis = async (repository: AnalysisRepository, provider: OandaProvider, instrument: string) => {
+  const [source, dailySource] = await Promise.all([provider.getH4Candles(instrument, 250), provider.getDailyCandles(instrument, 250)]);
+  return runManualOandaAnalysis(repository, source, dailySource);
 };

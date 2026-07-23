@@ -44,3 +44,11 @@ export const parseSchedulerEnabled = (value: string | undefined): boolean => {
   if (value === 'false') return false;
   throw new Error('NAS100_DASHBOARD_SCHEDULER_ENABLED must be "true" or "false".');
 };
+
+export type SchedulerProvider = 'fixture' | 'oanda';
+
+export const parseSchedulerProvider = (value: string | undefined): SchedulerProvider => {
+  if (value === undefined || value === 'fixture') return 'fixture';
+  if (value === 'oanda') return 'oanda';
+  throw new Error('NAS100_DASHBOARD_SCHEDULER_PROVIDER must be "fixture" or "oanda".');
+};

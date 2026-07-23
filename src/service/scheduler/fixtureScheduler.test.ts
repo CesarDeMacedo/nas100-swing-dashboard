@@ -10,7 +10,7 @@ import { currentAnalysisSource, openCandleDatasetFixture } from '../../domain/fi
 import { AnalysisRepository } from '../../persistence/analysisRepository';
 import { runSyntheticFixtureAnalysis } from '../fixtureRun';
 import { FixtureScheduler } from './fixtureScheduler';
-import { getTorontoScheduleSlot, parseSchedulerEnabled } from './torontoSchedule';
+import { getTorontoScheduleSlot, parseSchedulerEnabled, parseSchedulerProvider } from './torontoSchedule';
 
 const weekdayAfternoon = new Date('2026-06-15T17:01:00.000Z');
 const weekdayEvening = new Date('2026-06-16T01:01:00.000Z');
@@ -42,10 +42,18 @@ describe('Toronto schedule slots', () => {
     expect(parseSchedulerEnabled('true')).toBe(true);
     expect(parseSchedulerEnabled('false')).toBe(false);
     expect(() => parseSchedulerEnabled('yes')).toThrow('NAS100_DASHBOARD_SCHEDULER_ENABLED');
+    expect(parseSchedulerProvider(undefined)).toBe('fixture');
+    expect(parseSchedulerProvider('oanda')).toBe('oanda');
+    expect(() => parseSchedulerProvider('invalid')).toThrow('NAS100_DASHBOARD_SCHEDULER_PROVIDER');
   });
 });
 
 describe('FixtureScheduler', () => {
+  it('reports selected provider and safe OANDA failures', async () => {
+    const scheduler = new FixtureScheduler({ enabled: true, provider: 'oanda', run: async () => ({ outcome: 'failed', runKey: 'oanda:request-failed', message: 'Scheduled OANDA analysis could not be completed.' }), log: () => undefined });
+    await scheduler.evaluate(weekdayAfternoon);
+    expect(scheduler.status()).toMatchObject({ configuredProvider: 'oanda', activeProvider: 'oanda', lastRunProvider: 'oanda', lastFailureSummary: 'Scheduled OANDA analysis could not be completed.' });
+  });
   it('triggers each in-memory Toronto slot once', async () => {
     const run = vi.fn(async () => ({ outcome: 'created' as const, runKey: 'fixture-key' }));
     const scheduler = new FixtureScheduler({ enabled: true, run, log: () => undefined });

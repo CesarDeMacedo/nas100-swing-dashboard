@@ -48,6 +48,8 @@ New OANDA reports calculate deterministic completed-H4 support, resistance, pref
 
 Saved OANDA reports that include a display snapshot can be reviewed in the dashboard as historical saved analysis, not live streaming. Mock data remains the default after refresh; the scheduler and automatic OANDA loading remain unchanged.
 
+The scheduler defaults to synthetic fixture mode. Set `NAS100_DASHBOARD_SCHEDULER_PROVIDER=oanda` only for an explicit read-only OANDA opt-in while `npm run service` is active; Toronto slots are unchanged and cross-market/event-risk inputs remain unavailable.
+
 ## Local Synthetic Scheduler
 
 While `npm run service` is running, the in-process scheduler evaluates `America/Toronto` time every 15 seconds and runs only these one-minute post-close slots: Monday-Friday at 1:01 p.m., and Sunday-Friday at 9:01 p.m. It skips Saturday and the Sunday 1:01 p.m. slot.

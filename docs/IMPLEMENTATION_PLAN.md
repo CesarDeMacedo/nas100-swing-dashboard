@@ -235,6 +235,8 @@ New manual OANDA reports derive deterministic support, resistance, preferred-ent
 
 Saved OANDA reports with a non-sensitive display snapshot can now be opened from History in the existing dashboard layout for the current browser session. This is historical review only: mock data remains the refresh default, and neither the scheduler nor browser starts OANDA loading automatically.
 
+The in-process scheduler now defaults to `fixture` and supports an explicit `oanda` provider mode through `NAS100_DASHBOARD_SCHEDULER_PROVIDER`. OANDA scheduling is read-only, uses the same manual pipeline and existing Toronto slots, and runs only while the local service is active. Cross-market and event-risk remain unavailable.
+
 - Objective: replace mock provider with a licensed live provider through adapters.
 - Scope: credentials, symbol mapping, OHLC, US500/US30 primary confirmation, Russell 2000 complementary confirmation, data health, and provider status.
 - Likely files: `apps/service/src/providers/`, settings, secure local config docs.

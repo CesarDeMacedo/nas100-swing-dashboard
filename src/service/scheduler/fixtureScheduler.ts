@@ -1,4 +1,5 @@
 import { SCHEDULER_SCHEDULE, SCHEDULER_TIMEZONE, getTorontoScheduleSlot } from './torontoSchedule';
+import type { SchedulerProvider } from './torontoSchedule';
 
 export type SchedulerRunResult = {
   outcome: 'created' | 'already_exists' | 'blocked' | 'failed';
@@ -13,6 +14,10 @@ export type SchedulerStatus = {
   configuredSchedule: readonly string[];
   lastEvaluatedSlot: string | null;
   lastRunResult: SchedulerRunResult | null;
+  configuredProvider: SchedulerProvider;
+  activeProvider: SchedulerProvider;
+  lastRunProvider: SchedulerProvider | null;
+  lastFailureSummary: string | null;
 };
 
 type FixtureSchedulerOptions = {
@@ -21,6 +26,7 @@ type FixtureSchedulerOptions = {
   now?: () => Date;
   intervalMs?: number;
   log?: (message: string) => void;
+  provider?: SchedulerProvider;
 };
 
 export class FixtureScheduler {
@@ -31,6 +37,7 @@ export class FixtureScheduler {
   private timer: ReturnType<typeof setInterval> | null = null;
   private lastEvaluatedSlot: string | null = null;
   private lastRunResult: SchedulerRunResult | null = null;
+  private lastRunProvider: SchedulerProvider | null = null;
 
   public constructor(private readonly options: FixtureSchedulerOptions) {
     this.now = options.now ?? (() => new Date());
@@ -57,6 +64,10 @@ export class FixtureScheduler {
       configuredSchedule: SCHEDULER_SCHEDULE,
       lastEvaluatedSlot: this.lastEvaluatedSlot,
       lastRunResult: this.lastRunResult,
+      configuredProvider: this.options.provider ?? 'fixture',
+      activeProvider: this.options.provider ?? 'fixture',
+      lastRunProvider: this.lastRunProvider,
+      lastFailureSummary: this.lastRunResult?.outcome === 'failed' ? this.lastRunResult.message ?? 'Scheduled analysis failed.' : null,
     };
   }
 
@@ -70,6 +81,7 @@ export class FixtureScheduler {
     try {
       const result = await this.options.run();
       this.lastRunResult = result;
+      this.lastRunProvider = this.options.provider ?? 'fixture';
       this.log(`NAS100 scheduler ${slot.key}: ${result.outcome}`);
       return result;
     } catch (cause) {
@@ -79,6 +91,7 @@ export class FixtureScheduler {
         message: cause instanceof Error ? cause.message : 'Scheduled synthetic analysis failed.',
       };
       this.lastRunResult = result;
+      this.lastRunProvider = this.options.provider ?? 'fixture';
       this.log(`NAS100 scheduler ${slot.key}: failed`);
       return result;
     }

@@ -1,5 +1,10 @@
 # Changelog
 
+## Optional OANDA Scheduler Mode
+
+- Added explicit `NAS100_DASHBOARD_SCHEDULER_PROVIDER=oanda` opt-in; fixture scheduling remains the default.
+- OANDA runs reuse the read-only manual pipeline and existing Toronto slots with safe scheduler health status.
+
 ## Saved OANDA Dashboard Review
 
 - Added session-only viewing of supported saved OANDA report snapshots from Analysis History in the existing dashboard layout.

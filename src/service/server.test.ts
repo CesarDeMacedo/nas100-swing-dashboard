@@ -25,9 +25,9 @@ const clearOandaEnvironment = () => {
   for (const key of oandaEnvironmentKeys) delete process.env[key];
 };
 
-const startService = async (options: { schedulerEnabled?: boolean; oandaEnvironment?: NodeJS.ProcessEnv; oandaFetch?: typeof fetch } = {}): Promise<RunningService> => {
+const startService = async (options: { schedulerEnabled?: boolean; schedulerProvider?: 'fixture' | 'oanda'; oandaEnvironment?: NodeJS.ProcessEnv; oandaFetch?: typeof fetch } = {}): Promise<RunningService> => {
   const directory = mkdtempSync(join(tmpdir(), 'nas100-service-'));
-  const service = createLocalService({ databasePath: join(directory, 'history.sqlite'), port: 0, schedulerEnabled: options.schedulerEnabled ?? false, oandaEnvironment: options.oandaEnvironment, oandaFetch: options.oandaFetch });
+  const service = createLocalService({ databasePath: join(directory, 'history.sqlite'), port: 0, schedulerEnabled: options.schedulerEnabled ?? false, schedulerProvider: options.schedulerProvider, oandaEnvironment: options.oandaEnvironment, oandaFetch: options.oandaFetch });
   const health = await service.start();
   const running = { stop: service.stop, schedulerStatus: service.schedulerStatus, baseUrl: `http://${LOCAL_SERVICE_HOST}:${health.port}`, directory };
   services.push(running);
@@ -135,9 +135,19 @@ describe('local manual-run service', () => {
     const service = await startService({ schedulerEnabled: true });
     const health = await fetch(`${service.baseUrl}/health`).then((response) => response.json());
 
-    expect(health.scheduler).toMatchObject({ enabled: true, running: true, configuredSchedule: ['Monday-Friday 13:01', 'Sunday-Friday 21:01'] });
+    expect(health.scheduler).toMatchObject({ enabled: true, running: true, configuredProvider: 'fixture', activeProvider: 'fixture', configuredSchedule: ['Monday-Friday 13:01', 'Sunday-Friday 21:01'] });
     await service.stop();
     expect(service.schedulerStatus().running).toBe(false);
+  });
+
+  it('keeps opt-in OANDA scheduling idle at service startup without requests', async () => {
+    const fetcher = vi.fn();
+    const service = await startService({ schedulerProvider: 'oanda', oandaEnvironment: { OANDA_ACCOUNT_ID: 'account-never-returned', OANDA_API_TOKEN: 'token-never-returned', OANDA_NAS100_INSTRUMENT: 'NAS100_USD' }, oandaFetch: fetcher });
+    const health = await fetch(`${service.baseUrl}/health`).then((response) => response.json());
+
+    expect(health.scheduler).toMatchObject({ configuredProvider: 'oanda', activeProvider: 'oanda', lastRunResult: null, lastFailureSummary: null });
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(JSON.stringify(health)).not.toContain('token-never-returned');
   });
 
   it('allows only local Vite preflight requests without changing its localhost bind', async () => {

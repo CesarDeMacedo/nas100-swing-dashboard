@@ -5,9 +5,9 @@ import { AnalysisRepository, defaultPersistencePath, type StoredAnalysisRun } fr
 import { oandaConfigurationStatus, parseOandaConfiguration } from '../providers/oanda/config';
 import { OandaProvider, findNas100CandidatesFromInstruments } from '../providers/oanda/oandaProvider';
 import { runSyntheticFixtureAnalysis } from './fixtureRun';
-import { runManualOandaAnalysis } from './oandaRun';
+import { executeManualOandaAnalysis, runManualOandaAnalysis } from './oandaRun';
 import { FixtureScheduler, type SchedulerStatus } from './scheduler/fixtureScheduler';
-import { parseSchedulerEnabled } from './scheduler/torontoSchedule';
+import { parseSchedulerEnabled, parseSchedulerProvider } from './scheduler/torontoSchedule';
 
 export const LOCAL_SERVICE_HOST = '127.0.0.1';
 export const DEFAULT_SERVICE_PORT = 4310;
@@ -27,6 +27,7 @@ type LocalServiceOptions = {
   port?: number;
   schedulerEnabled?: boolean;
   schedulerIntervalMs?: number;
+  schedulerProvider?: 'fixture' | 'oanda';
   oandaEnvironment?: NodeJS.ProcessEnv;
   oandaFetch?: typeof fetch;
 };
@@ -99,6 +100,7 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
   const databasePath = options.databasePath ?? process.env.NAS100_DASHBOARD_DB_PATH ?? defaultPersistencePath();
   const configuredPort = options.port ?? resolvePort(process.env.NAS100_DASHBOARD_PORT);
   const schedulerEnabled = options.schedulerEnabled ?? parseSchedulerEnabled(process.env.NAS100_DASHBOARD_SCHEDULER_ENABLED);
+  const schedulerProvider = options.schedulerProvider ?? parseSchedulerProvider(process.env.NAS100_DASHBOARD_SCHEDULER_PROVIDER);
   const oandaConfiguration = parseOandaConfiguration(options.oandaEnvironment);
   const oandaProvider = oandaConfiguration.state === 'configured' ? new OandaProvider(oandaConfiguration, options.oandaFetch) : null;
   let repository: AnalysisRepository | null = null;
@@ -107,8 +109,18 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
   const scheduler = new FixtureScheduler({
     enabled: schedulerEnabled,
     intervalMs: options.schedulerIntervalMs,
+    provider: schedulerProvider,
     run: async () => {
       if (!repository) throw new Error('Local persistence is unavailable.');
+      if (schedulerProvider === 'oanda') {
+        if (!oandaProvider || !oandaConfiguration.nas100Instrument) return { outcome: 'failed', runKey: 'oanda:unconfigured', message: 'OANDA scheduler requires configured credentials and an explicit instrument.' };
+        try {
+          const result = await executeManualOandaAnalysis(repository, oandaProvider, oandaConfiguration.nas100Instrument);
+          return { outcome: result.outcome, runKey: result.run.runKey, message: result.message };
+        } catch {
+          return { outcome: 'failed', runKey: 'oanda:request-failed', message: 'Scheduled OANDA analysis could not be completed.' };
+        }
+      }
       const result = runSyntheticFixtureAnalysis(repository);
       return { outcome: result.outcome, runKey: result.run.runKey, message: result.message };
     },
@@ -198,11 +210,7 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
           return;
         }
         try {
-          const [source, dailySource] = await Promise.all([
-            oandaProvider.getH4Candles(oandaConfiguration.nas100Instrument, 250),
-            oandaProvider.getDailyCandles(oandaConfiguration.nas100Instrument, 250),
-          ]);
-          const result = runManualOandaAnalysis(activeRepository, source, dailySource);
+          const result = await executeManualOandaAnalysis(activeRepository, oandaProvider, oandaConfiguration.nas100Instrument);
           if (!result.report) {
             error(response, 409, result.outcome === 'failed' ? 'OANDA_MANUAL_RUN_FAILED' : 'OANDA_NO_COMPLETED_CANDLES', result.message ?? 'Manual OANDA analysis could not be completed.');
             return;
