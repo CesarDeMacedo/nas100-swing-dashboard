@@ -30,6 +30,22 @@ const dailySource = (): OandaDailyCandleResult => ({
   ],
 });
 
+const levelSource = (): OandaH4CandleResult => ({
+  provider: 'oanda-v20', environment: 'practice', instrument: 'NAS100_USD', timeframe: 'H4',
+  candles: Array.from({ length: 22 }, (_, index) => ({
+    time: new Date(Date.UTC(2026, 6, 1, index * 4)).toISOString(),
+    open: 102,
+    high: index === 12 ? 120 : 108,
+    low: index === 5 ? 90 : 98,
+    close: index === 21 ? 105 : 103,
+    isClosed: index !== 21,
+    volume: 10,
+    instrument: 'NAS100_USD',
+    timeframe: 'H4' as const,
+    source: 'oanda-v20' as const,
+  })),
+});
+
 const repository = () => {
   const directory = mkdtempSync(join(tmpdir(), 'nas100-oanda-run-'));
   directories.push(directory);
@@ -63,6 +79,21 @@ describe('manual OANDA analysis run', () => {
     expect(technicalContext.h4Structure.sourceCandleTime).toBe('2026-07-21T20:00:00.000Z');
     expect(technicalContext.dailyRegime.sourceCandleTime).toBe('2026-07-20T00:00:00.000Z');
     expect(technicalContext.dailyRegime.status).toBe('unavailable');
+  });
+
+  it('uses calculated completed-H4 market levels in new OANDA reports instead of fixture levels', () => {
+    const { analysis } = buildOandaMultiTimeframeInputs(levelSource(), dailySource(), '2026-07-22T01:00:00.000Z');
+    const store = repository();
+    const result = runManualOandaAnalysis(store, levelSource(), dailySource());
+
+    expect(analysis.supportZones).not.toHaveLength(0);
+    expect(analysis.resistanceZones).not.toHaveLength(0);
+    expect(analysis.supportZones.every((zone) => zone.source.startsWith('OANDA H4 confirmed swing'))).toBe(true);
+    expect(analysis.resistanceZones.every((zone) => zone.source.startsWith('OANDA H4 confirmed swing'))).toBe(true);
+    expect(result.report?.supportZones).toEqual(analysis.supportZones);
+    expect(result.report?.resistanceZones).toEqual(analysis.resistanceZones);
+    expect(JSON.stringify(result.report)).not.toContain('fixture');
+    store.close();
   });
 
   it('persists one safe immutable report per latest completed candle', () => {

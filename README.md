@@ -44,6 +44,8 @@ OANDA data is not connected to the dashboard or scheduler. Manual OANDA reports 
 
 `POST /runs/manual-oanda` requests 250 OANDA midpoint H4 candles and 250 Daily candles, keeping the completed datasets separate: H4 serves structure and decisions; Daily serves Daily Regime only. Open candles are excluded and both source timestamps are saved with the immutable local report. It is manual and read-only; cross-market and event-risk data remain unavailable, so it cannot authorize an entry. The dashboard still defaults to mock data, the scheduler remains synthetic and unchanged, and no trades can be executed.
 
+New OANDA reports calculate deterministic completed-H4 support, resistance, preferred-entry, and informational invalidation levels with ATR-based buffers. Existing local reports remain immutable. Selecting an OANDA report in the dashboard is a later milestone.
+
 ## Local Synthetic Scheduler
 
 While `npm run service` is running, the in-process scheduler evaluates `America/Toronto` time every 15 seconds and runs only these one-minute post-close slots: Monday-Friday at 1:01 p.m., and Sunday-Friday at 9:01 p.m. It skips Saturday and the Sunday 1:01 p.m. slot.

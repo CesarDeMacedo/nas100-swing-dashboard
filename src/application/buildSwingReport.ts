@@ -1,4 +1,5 @@
 import type { DashboardState } from './buildDashboardState';
+import type { PriceZone } from '../schemas/analysis';
 
 export const SWING_REPORT_VERSION = '1.0.0';
 
@@ -9,6 +10,11 @@ export type SwingReport = {
   timeframe: string;
   sourceCandleTime: string | null;
   dailySourceCandleTime?: string | null;
+  supportZones?: PriceZone[];
+  resistanceZones?: PriceZone[];
+  preferredEntryZone?: PriceZone | null;
+  invalidationCandidate?: number | null;
+  levelWarnings?: string[];
   dataFreshness: DashboardState['dataFreshness'];
   regime: string;
   h4Structure: string;

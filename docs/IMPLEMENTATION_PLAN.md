@@ -231,6 +231,8 @@ Read-only OANDA v20 foundation is implemented but remains isolated from broader 
 
 Manual OANDA analysis is implemented as a separate `POST /runs/manual-oanda` path. It requests 250 midpoint H4 candles and 250 Daily candles, excludes all open candles, and keeps H4 structure/decision inputs separate from Daily Regime inputs. Both source timestamps are persisted with the immutable local report, while H4 remains the run identity. The path is GET-only toward OANDA and manual only; no dashboard or scheduler integration exists. Cross-market and event-risk inputs are explicitly unavailable, so the resulting report cannot authorize an entry. No trade execution exists.
 
+New manual OANDA reports derive deterministic support, resistance, preferred-entry, and informational invalidation levels from completed H4 confirmed swings with centralized ATR buffers. Historical reports are not changed. Dashboard selection of an OANDA report remains deferred.
+
 - Objective: replace mock provider with a licensed live provider through adapters.
 - Scope: credentials, symbol mapping, OHLC, US500/US30 primary confirmation, Russell 2000 complementary confirmation, data health, and provider status.
 - Likely files: `apps/service/src/providers/`, settings, secure local config docs.

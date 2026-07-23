@@ -1,5 +1,10 @@
 # Changelog
 
+## Deterministic OANDA Market Levels
+
+- New manual OANDA reports derive immutable completed-H4 swing support, resistance, preferred-entry, and informational invalidation levels with ATR-based buffers.
+- Cross-market and event-risk remain unavailable; dashboard selection of OANDA reports remains deferred.
+
 ## OANDA Multi-Timeframe Data Foundation
 
 - Manual OANDA analysis now fetches and validates separate H4 and Daily midpoint candle datasets; open candles are excluded from both.

@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { buildDashboardState, type DashboardState } from '../application/buildDashboardState';
 import { buildSwingReport, SWING_REPORT_VERSION, type SwingReport } from '../application/buildSwingReport';
 import { classifyDailyRegime } from '../domain/dailyRegime';
+import { calculateMarketLevels, type MarketLevelDirection, type MarketLevels } from '../domain/marketLevels';
 import { buildTechnicalContext, mapCanonicalDailyRegimeToLegacy, type TechnicalContext } from '../domain/technicalContext';
 import { AnalysisRepository, type StoredAnalysisRun } from '../persistence/analysisRepository';
 import type { OandaDailyCandleResult, OandaH4CandleResult } from '../providers/oanda/types';
@@ -36,6 +37,7 @@ type OandaReportInputs = {
   candles: CandleDataset;
   multiTimeframe: OandaMultiTimeframeData;
   technicalContext: TechnicalContext;
+  marketLevels: MarketLevels;
 };
 
 export type OandaMultiTimeframeData = {
@@ -111,6 +113,8 @@ export const buildOandaMultiTimeframeInputs = (h4Source: OandaH4CandleResult, da
     dailyDataStatus: dailyRegime.status,
     warnings: [...technicalContext.warnings, ...(dailySource.candles.length === 0 ? ['No completed Daily candles are available.'] : [])],
   };
+  const marketLevelDirection: MarketLevelDirection = technicalContext.canonicalH4Structure.startsWith('bullish') ? 'long' : technicalContext.canonicalH4Structure.startsWith('bearish') ? 'short' : 'none';
+  const marketLevels = calculateMarketLevels(candles.candles, marketLevelDirection);
   const analysis = AnalysisReportSchema.parse({
     schemaVersion: '1.0.0',
     strategyVersion: OANDA_STRATEGY_VERSION,
@@ -134,8 +138,10 @@ export const buildOandaMultiTimeframeInputs = (h4Source: OandaH4CandleResult, da
     confidence: 0,
     currentPrice: latest.close,
     changePercent,
-    supportZones: [],
-    resistanceZones: [],
+    supportZones: marketLevels.supportZones,
+    resistanceZones: marketLevels.resistanceZones,
+    ...(marketLevels.preferredEntryZone ? { preferredEntryZone: marketLevels.preferredEntryZone } : {}),
+    ...(marketLevels.invalidationCandidate === null ? {} : { invalidation: marketLevels.invalidationCandidate }),
     targets: [],
     whyNoEntry: [
       'Cross-market confirmation is unavailable.',
@@ -171,7 +177,7 @@ export const buildOandaMultiTimeframeInputs = (h4Source: OandaH4CandleResult, da
       latestCandleClosed: true,
       staleAfterMinutes: 250,
       validationErrors: [],
-      warnings: ['Open OANDA candles are excluded from this manual analysis run.'],
+      warnings: ['Open OANDA candles are excluded from this manual analysis run.', ...marketLevels.warnings],
     },
     setupScoreBreakdown: {
       trend: 0,
@@ -193,7 +199,7 @@ export const buildOandaMultiTimeframeInputs = (h4Source: OandaH4CandleResult, da
       synthetic: false,
     },
   });
-  return { analysis, candles, multiTimeframe, technicalContext };
+  return { analysis, candles, multiTimeframe, technicalContext, marketLevels };
 };
 
 export const buildOandaReportInputs = (source: OandaH4CandleResult, generatedAt = new Date().toISOString()) =>
@@ -248,8 +254,17 @@ export const runManualOandaAnalysis = (repository: AnalysisRepository, source: O
   }
 
   try {
-    const { analysis, candles, multiTimeframe, technicalContext } = buildOandaMultiTimeframeInputs(source, dailySource, startedAt);
-    const report = { ...buildSwingReport(safetyConstrainedState(buildDashboardState(analysis, candles, technicalContext))), dailySourceCandleTime: multiTimeframe.dailySourceCandleTime };
+    const { analysis, candles, multiTimeframe, technicalContext, marketLevels } = buildOandaMultiTimeframeInputs(source, dailySource, startedAt);
+    const { preferredEntryZone: _preferredEntryZone, invalidation: _invalidation, ...analysisWithoutMarketLevels } = analysis;
+    const report = {
+      ...buildSwingReport(safetyConstrainedState(buildDashboardState({ ...analysisWithoutMarketLevels, supportZones: [], resistanceZones: [] }, candles, technicalContext))),
+      dailySourceCandleTime: multiTimeframe.dailySourceCandleTime,
+      supportZones: analysis.supportZones,
+      resistanceZones: analysis.resistanceZones,
+      preferredEntryZone: analysis.preferredEntryZone ?? null,
+      invalidationCandidate: analysis.invalidation ?? null,
+      levelWarnings: marketLevels.warnings,
+    };
     const runKey = oandaRunKey(report, analysis.strategyVersion);
     const existing = repository.getRunByKey(runKey);
     if (existing?.report) return { ...base, ...multiTimeframe, outcome: 'already_exists', run: existing.run, report: existing.report };
