@@ -2,9 +2,11 @@ import { randomUUID } from 'node:crypto';
 
 import { buildDashboardState, type DashboardState } from '../application/buildDashboardState';
 import { buildSwingReport, SWING_REPORT_VERSION, type SwingReport } from '../application/buildSwingReport';
+import { classifyDailyRegime } from '../domain/dailyRegime';
+import { buildTechnicalContext, mapCanonicalDailyRegimeToLegacy, type TechnicalContext } from '../domain/technicalContext';
 import { AnalysisRepository, type StoredAnalysisRun } from '../persistence/analysisRepository';
-import type { OandaH4CandleResult } from '../providers/oanda/types';
-import { AnalysisReportSchema, CandleDatasetSchema, type AnalysisReport, type CandleDataset } from '../schemas';
+import type { OandaDailyCandleResult, OandaH4CandleResult } from '../providers/oanda/types';
+import { AnalysisReportSchema, CandleDatasetSchema, type AnalysisReport, type Candle, type CandleDataset } from '../schemas';
 
 export const OANDA_STRATEGY_VERSION = '1.0.0';
 
@@ -17,12 +19,39 @@ export type OandaRunResult = {
   excludedOpenCandleCount: number;
   provider: 'oanda-v20';
   instrument: string;
+  h4SourceCandleTime: string | null;
+  dailySourceCandleTime: string | null;
+  h4CompletedCandleCount: number;
+  dailyCompletedCandleCount: number;
+  h4ExcludedOpenCandleCount: number;
+  dailyExcludedOpenCandleCount: number;
+  h4DataStatus: 'available' | 'unavailable';
+  dailyDataStatus: 'available' | 'unavailable';
+  warnings: string[];
   message?: string;
 };
 
 type OandaReportInputs = {
   analysis: AnalysisReport;
   candles: CandleDataset;
+  multiTimeframe: OandaMultiTimeframeData;
+  technicalContext: TechnicalContext;
+};
+
+export type OandaMultiTimeframeData = {
+  provider: 'oanda-v20';
+  instrument: string;
+  h4Candles: Candle[];
+  dailyCandles: Candle[];
+  h4SourceCandleTime: string | null;
+  dailySourceCandleTime: string | null;
+  h4CompletedCandleCount: number;
+  dailyCompletedCandleCount: number;
+  h4ExcludedOpenCandleCount: number;
+  dailyExcludedOpenCandleCount: number;
+  h4DataStatus: 'available' | 'unavailable';
+  dailyDataStatus: 'available' | 'unavailable';
+  warnings: string[];
 };
 
 const unavailableCrossMarket = (instrument: 'US500' | 'US30' | 'RUSSELL_2000') => ({
@@ -32,49 +61,71 @@ const unavailableCrossMarket = (instrument: 'US500' | 'US30' | 'RUSSELL_2000') =
   notes: ['Live cross-market data is unavailable for this manual OANDA run.'],
 });
 
-export const buildOandaReportInputs = (source: OandaH4CandleResult, generatedAt = new Date().toISOString()): OandaReportInputs => {
-  const completed = source.candles.filter((candle) => candle.isClosed);
+const asDatasetCandles = (candles: readonly { time: string; open: number; high: number; low: number; close: number; volume: number | null; instrument: string; timeframe: 'H4' | 'D'; source: 'oanda-v20' }[]) =>
+  candles.map((candle) => ({ time: candle.time, open: candle.open, high: candle.high, low: candle.low, close: candle.close, isClosed: true, ...(candle.volume === null ? {} : { volume: candle.volume }), source: candle.source, instrument: candle.instrument, timeframe: candle.timeframe }));
+
+const emptyDailyResult = (source: OandaH4CandleResult): OandaDailyCandleResult => ({ provider: source.provider, environment: source.environment, instrument: source.instrument, timeframe: 'D', candles: [] });
+
+export const buildOandaMultiTimeframeInputs = (h4Source: OandaH4CandleResult, dailySource: OandaDailyCandleResult, generatedAt = new Date().toISOString()): OandaReportInputs => {
+  const completed = h4Source.candles.filter((candle) => candle.isClosed);
+  const dailyCompleted = dailySource.candles.filter((candle) => candle.isClosed);
   const latest = completed.at(-1);
+  const latestDaily = dailyCompleted.at(-1);
   if (!latest) throw new Error('No completed OANDA H4 candles are available.');
   const previous = completed.at(-2);
   const changePercent = previous ? ((latest.close - previous.close) / previous.close) * 100 : 0;
   const candles = CandleDatasetSchema.parse({
     schemaVersion: '1.0.0',
-    datasetId: `oanda-v20:${source.instrument}:H4:${latest.time}`,
+    datasetId: `oanda-v20:${h4Source.instrument}:H4:${latest.time}`,
     description: 'Completed OANDA v20 midpoint H4 candles for a manual read-only analysis run.',
     isSynthetic: false,
     timezone: 'America/Toronto',
-    instrument: source.instrument,
+    instrument: h4Source.instrument,
     timeframe: 'H4',
     generatedFor: 'manual-oanda-analysis',
-    candles: completed.map((candle) => ({
-      time: candle.time,
-      open: candle.open,
-      high: candle.high,
-      low: candle.low,
-      close: candle.close,
-      isClosed: true,
-      ...(candle.volume === null ? {} : { volume: candle.volume }),
-      source: candle.source,
-      instrument: candle.instrument,
-      timeframe: candle.timeframe,
-    })),
+    candles: asDatasetCandles(completed),
   });
+  const h4TechnicalContext = buildTechnicalContext(candles.candles);
+  const dailyRegime = classifyDailyRegime(asDatasetCandles(dailyCompleted), latestDaily?.close ?? null);
+  const technicalContext: TechnicalContext = {
+    ...h4TechnicalContext,
+    dailyRegime,
+    canonicalDailyRegime: dailyRegime.regime,
+    legacyDailyRegime: mapCanonicalDailyRegimeToLegacy(dailyRegime.regime),
+    status: h4TechnicalContext.status === 'unavailable' ? 'unavailable' : dailyRegime.status === 'available' && h4TechnicalContext.status === 'ready' ? 'ready' : 'partial',
+    warnings: [...h4TechnicalContext.warnings, ...(dailyRegime.status === 'unavailable' ? ['Daily regime is unavailable from completed Daily candles'] : [])],
+    missingInputs: [...new Set([...h4TechnicalContext.missingInputs, ...dailyRegime.missingInputs])],
+  };
+  const multiTimeframe: OandaMultiTimeframeData = {
+    provider: h4Source.provider,
+    instrument: h4Source.instrument,
+    h4Candles: candles.candles,
+    dailyCandles: asDatasetCandles(dailyCompleted),
+    h4SourceCandleTime: latest.time,
+    dailySourceCandleTime: latestDaily?.time ?? null,
+    h4CompletedCandleCount: completed.length,
+    dailyCompletedCandleCount: dailyCompleted.length,
+    h4ExcludedOpenCandleCount: h4Source.candles.length - completed.length,
+    dailyExcludedOpenCandleCount: dailySource.candles.length - dailyCompleted.length,
+    h4DataStatus: technicalContext.h4Structure.status,
+    dailyDataStatus: dailyRegime.status,
+    warnings: [...technicalContext.warnings, ...(dailySource.candles.length === 0 ? ['No completed Daily candles are available.'] : [])],
+  };
   const analysis = AnalysisReportSchema.parse({
     schemaVersion: '1.0.0',
     strategyVersion: OANDA_STRATEGY_VERSION,
-    id: `oanda-v20:${source.instrument}:${latest.time}`,
+    id: `oanda-v20:${h4Source.instrument}:${latest.time}`,
     generatedAt,
     completedCandleAt: latest.time,
     officialTimezone: 'America/Toronto',
-    instrument: source.instrument,
-    displayName: source.instrument,
+    instrument: h4Source.instrument,
+    displayName: h4Source.instrument,
     timeframe: 'H4',
     dataProvider: 'OANDA v20',
     dataFreshness: 'FRESH',
     latestCandleStatus: 'COMPLETED',
-    dailyRegime: 'NEUTRAL',
-    h4Structure: 'UNKNOWN',
+    dailyRegime: technicalContext.legacyDailyRegime ?? 'NEUTRAL',
+    h4Structure: technicalContext.legacyH4Structure ?? 'UNKNOWN',
     bias: 'NEUTRAL',
     status: 'DATA_UNAVAILABLE',
     action: 'WAIT',
@@ -135,15 +186,18 @@ export const buildOandaReportInputs = (source: OandaH4CandleResult, generatedAt 
     },
     candlesReference: {
       datasetId: candles.datasetId,
-      instrument: source.instrument,
+      instrument: h4Source.instrument,
       timeframe: 'H4',
       latestCandleTime: latest.time,
       candleCount: completed.length,
       synthetic: false,
     },
   });
-  return { analysis, candles };
+  return { analysis, candles, multiTimeframe, technicalContext };
 };
+
+export const buildOandaReportInputs = (source: OandaH4CandleResult, generatedAt = new Date().toISOString()) =>
+  buildOandaMultiTimeframeInputs(source, emptyDailyResult(source), generatedAt);
 
 const safetyConstrainedState = (state: DashboardState): DashboardState => ({
   ...state,
@@ -166,12 +220,21 @@ export const oandaRunKey = (report: SwingReport, strategyVersion: string) =>
 
 const incompleteRunKey = (instrument: string) => ['oanda-v20', instrument, 'H4', 'unavailable', 'blocked', OANDA_STRATEGY_VERSION].join(':');
 
-export const runManualOandaAnalysis = (repository: AnalysisRepository, source: OandaH4CandleResult): OandaRunResult => {
+export const runManualOandaAnalysis = (repository: AnalysisRepository, source: OandaH4CandleResult, dailySource = emptyDailyResult(source)): OandaRunResult => {
   const startedAt = new Date().toISOString();
   const fetchedCandleCount = source.candles.length;
   const completedCandleCount = source.candles.filter((candle) => candle.isClosed).length;
   const excludedOpenCandleCount = fetchedCandleCount - completedCandleCount;
-  const base = { fetchedCandleCount, completedCandleCount, excludedOpenCandleCount, provider: source.provider, instrument: source.instrument } as const;
+  const dailyCompletedCandleCount = dailySource.candles.filter((candle) => candle.isClosed).length;
+  const base = {
+    fetchedCandleCount, completedCandleCount, excludedOpenCandleCount, provider: source.provider, instrument: source.instrument,
+    h4SourceCandleTime: source.candles.filter((candle) => candle.isClosed).at(-1)?.time ?? null,
+    dailySourceCandleTime: dailySource.candles.filter((candle) => candle.isClosed).at(-1)?.time ?? null,
+    h4CompletedCandleCount: completedCandleCount, dailyCompletedCandleCount,
+    h4ExcludedOpenCandleCount: excludedOpenCandleCount, dailyExcludedOpenCandleCount: dailySource.candles.length - dailyCompletedCandleCount,
+    h4DataStatus: completedCandleCount === 0 ? 'unavailable' : 'available', dailyDataStatus: dailyCompletedCandleCount === 0 ? 'unavailable' : 'available',
+    warnings: [] as string[],
+  } as const;
 
   if (completedCandleCount === 0) {
     const runKey = incompleteRunKey(source.instrument);
@@ -185,15 +248,15 @@ export const runManualOandaAnalysis = (repository: AnalysisRepository, source: O
   }
 
   try {
-    const { analysis, candles } = buildOandaReportInputs(source, startedAt);
-    const report = buildSwingReport(safetyConstrainedState(buildDashboardState(analysis, candles)));
+    const { analysis, candles, multiTimeframe, technicalContext } = buildOandaMultiTimeframeInputs(source, dailySource, startedAt);
+    const report = { ...buildSwingReport(safetyConstrainedState(buildDashboardState(analysis, candles, technicalContext))), dailySourceCandleTime: multiTimeframe.dailySourceCandleTime };
     const runKey = oandaRunKey(report, analysis.strategyVersion);
     const existing = repository.getRunByKey(runKey);
-    if (existing?.report) return { ...base, outcome: 'already_exists', run: existing.run, report: existing.report };
+    if (existing?.report) return { ...base, ...multiTimeframe, outcome: 'already_exists', run: existing.run, report: existing.report };
     const run = repository.saveCompletedRun({
       id: randomUUID(), runKey, startedAt, completedAt: new Date().toISOString(), status: 'COMPLETED', source: 'manual',
     }, report);
-    return { ...base, outcome: 'created', run, report };
+    return { ...base, ...multiTimeframe, outcome: 'created', run, report };
   } catch {
     const runKey = ['oanda-v20', source.instrument, 'H4', 'failed', OANDA_STRATEGY_VERSION, startedAt].join(':');
     const run = repository.saveNonCompletedRun({

@@ -267,11 +267,13 @@ describe('local manual-run service', () => {
   });
 
   it('creates an idempotent manual OANDA report from completed candles only', async () => {
-    let requestUrl = '';
+    const requestUrls: string[] = [];
     const fetcher: typeof fetch = async (input, init) => {
-      requestUrl = input instanceof URL ? input.toString() : typeof input === 'string' ? input : input.url;
+      const requestUrl = input instanceof URL ? input.toString() : typeof input === 'string' ? input : input.url;
+      requestUrls.push(requestUrl);
       expect(init?.method).toBe('GET');
-      return new Response(JSON.stringify(oandaCandles()), { status: 200 });
+      const granularity = new URL(requestUrl).searchParams.get('granularity');
+      return new Response(JSON.stringify(granularity === 'D' ? { candles: oandaCandles().candles.map((candle, index) => ({ ...candle, time: `2026-07-${String(19 + index).padStart(2, '0')}T00:00:00.000Z` })) } : oandaCandles()), { status: 200 });
     };
     const service = await startService({
       oandaEnvironment: { OANDA_ACCOUNT_ID: 'account-never-returned', OANDA_API_TOKEN: 'token-never-returned', OANDA_NAS100_INSTRUMENT: 'NAS100_USD' },
@@ -282,15 +284,16 @@ describe('local manual-run service', () => {
     const firstBody = await first.json();
     const repeated = await fetch(`${service.baseUrl}/runs/manual-oanda`, { method: 'POST' }).then((response) => response.json());
     const stored = await fetch(`${service.baseUrl}/runs/${encodeURIComponent(firstBody.runKey)}`).then((response) => response.json());
-    const url = new URL(requestUrl);
+    const urls = requestUrls.map((requestUrl) => new URL(requestUrl));
 
     expect(first.status).toBe(201);
-    expect(url.searchParams).toMatchObject({});
-    expect(url.searchParams.get('count')).toBe('250');
-    expect(firstBody).toMatchObject({ provider: 'oanda-v20', instrument: 'NAS100_USD', sourceCandleTime: '2026-07-21T20:00:00.000Z', fetchedCandleCount: 3, completedCandleCount: 2, excludedOpenCandleCount: 1, alreadyExists: false, isActionable: false });
+    expect(urls.map((url) => url.searchParams.get('granularity'))).toContain('H4');
+    expect(urls.map((url) => url.searchParams.get('granularity'))).toContain('D');
+    expect(urls.every((url) => url.searchParams.get('count') === '250')).toBe(true);
+    expect(firstBody).toMatchObject({ provider: 'oanda-v20', instrument: 'NAS100_USD', sourceCandleTime: '2026-07-21T20:00:00.000Z', h4SourceCandleTime: '2026-07-21T20:00:00.000Z', dailySourceCandleTime: '2026-07-20T00:00:00.000Z', h4CompletedCandleCount: 2, dailyCompletedCandleCount: 2, h4ExcludedOpenCandleCount: 1, dailyExcludedOpenCandleCount: 1, alreadyExists: false, isActionable: false });
     expect(['BUY', 'SELL']).not.toContain(firstBody.action);
     expect(repeated).toMatchObject({ runKey: firstBody.runKey, alreadyExists: true });
-    expect(stored.report).toMatchObject({ sourceCandleTime: '2026-07-21T20:00:00.000Z', currentPrice: 29030, targets: [] });
+    expect(stored.report).toMatchObject({ sourceCandleTime: '2026-07-21T20:00:00.000Z', dailySourceCandleTime: '2026-07-20T00:00:00.000Z', currentPrice: 29030, targets: [] });
     expect(JSON.stringify({ firstBody, repeated, stored })).not.toContain('token-never-returned');
     expect(JSON.stringify(stored.report)).not.toContain('99999');
   });

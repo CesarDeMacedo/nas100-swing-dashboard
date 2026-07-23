@@ -111,7 +111,7 @@ export const ZoneTypeSchema = z.enum(ZONE_TYPES);
 export const SETUP_GRADES = ['D', 'C', 'C+', 'B', 'A', 'A+'] as const;
 export const SetupGradeSchema = z.enum(SETUP_GRADES);
 
-export const TIMEFRAMES = ['H4'] as const;
+export const TIMEFRAMES = ['H4', 'D'] as const;
 export const TimeframeSchema = z.enum(TIMEFRAMES);
 
 export const CROSS_MARKET_CONFIRMATIONS = [

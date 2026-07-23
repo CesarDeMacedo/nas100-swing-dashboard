@@ -8,6 +8,7 @@ export type SwingReport = {
   instrument: string;
   timeframe: string;
   sourceCandleTime: string | null;
+  dailySourceCandleTime?: string | null;
   dataFreshness: DashboardState['dataFreshness'];
   regime: string;
   h4Structure: string;

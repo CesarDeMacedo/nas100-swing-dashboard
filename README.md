@@ -42,7 +42,7 @@ Create an OANDA Practice account in the OANDA portal, generate a personal API to
 
 OANDA data is not connected to the dashboard or scheduler. Manual OANDA reports use the deterministic report pipeline and local persistence only; the service uses GET-only OANDA requests and has no order, trade, or account-modification capability.
 
-`POST /runs/manual-oanda` requests 250 OANDA midpoint H4 candles, excludes every open candle, and saves one immutable local OANDA-backed report from completed candles only. It is manual and read-only; cross-market and event-risk data remain unavailable, so it cannot authorize an entry. The dashboard and synthetic scheduler remain unchanged, and no trades can be executed.
+`POST /runs/manual-oanda` requests 250 OANDA midpoint H4 candles and 250 Daily candles, keeping the completed datasets separate: H4 serves structure and decisions; Daily serves Daily Regime only. Open candles are excluded and both source timestamps are saved with the immutable local report. It is manual and read-only; cross-market and event-risk data remain unavailable, so it cannot authorize an entry. The dashboard still defaults to mock data, the scheduler remains synthetic and unchanged, and no trades can be executed.
 
 ## Local Synthetic Scheduler
 

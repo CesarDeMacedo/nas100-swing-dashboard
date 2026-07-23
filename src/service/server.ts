@@ -198,8 +198,11 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
           return;
         }
         try {
-          const source = await oandaProvider.getH4Candles(oandaConfiguration.nas100Instrument, 250);
-          const result = runManualOandaAnalysis(activeRepository, source);
+          const [source, dailySource] = await Promise.all([
+            oandaProvider.getH4Candles(oandaConfiguration.nas100Instrument, 250),
+            oandaProvider.getDailyCandles(oandaConfiguration.nas100Instrument, 250),
+          ]);
+          const result = runManualOandaAnalysis(activeRepository, source, dailySource);
           if (!result.report) {
             error(response, 409, result.outcome === 'failed' ? 'OANDA_MANUAL_RUN_FAILED' : 'OANDA_NO_COMPLETED_CANDLES', result.message ?? 'Manual OANDA analysis could not be completed.');
             return;
@@ -210,9 +213,17 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
             provider: result.provider,
             instrument: result.instrument,
             sourceCandleTime: result.report.sourceCandleTime,
+            h4SourceCandleTime: result.h4SourceCandleTime,
+            dailySourceCandleTime: result.dailySourceCandleTime,
             fetchedCandleCount: result.fetchedCandleCount,
             completedCandleCount: result.completedCandleCount,
             excludedOpenCandleCount: result.excludedOpenCandleCount,
+            h4CompletedCandleCount: result.h4CompletedCandleCount,
+            dailyCompletedCandleCount: result.dailyCompletedCandleCount,
+            h4ExcludedOpenCandleCount: result.h4ExcludedOpenCandleCount,
+            dailyExcludedOpenCandleCount: result.dailyExcludedOpenCandleCount,
+            dailyRegimeStatus: result.dailyDataStatus,
+            h4StructureStatus: result.h4DataStatus,
             action: result.report.action,
             direction: result.report.direction,
             score: result.report.score,

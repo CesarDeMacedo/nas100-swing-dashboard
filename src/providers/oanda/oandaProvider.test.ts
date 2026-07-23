@@ -73,10 +73,29 @@ describe('OANDA read-only provider', () => {
     expect(result.candles[0]).toMatchObject({ isClosed: false, open: 29000, high: 29040, low: 28980, close: 29020 });
   });
 
+  it('requests validated Daily midpoint candles with D granularity', async () => {
+    let requestUrl = '';
+    const fetcher: typeof fetch = async (input) => {
+      requestUrl = input instanceof URL ? input.toString() : typeof input === 'string' ? input : input.url;
+      return new Response(JSON.stringify({ candles: [{ time: '2026-07-21T00:00:00.000Z', complete: true, mid: { o: '29000', h: '29040', l: '28980', c: '29020' } }] }), { status: 200 });
+    };
+    const result = await new OandaProvider(configured(), fetcher).getDailyCandles('NAS100_USD', 250);
+    const url = new URL(requestUrl);
+
+    expect(url.searchParams.get('granularity')).toBe('D');
+    expect(url.searchParams.get('price')).toBe('M');
+    expect(result).toMatchObject({ timeframe: 'D', candles: [{ timeframe: 'D', isClosed: true }] });
+  });
+
   it('rejects invalid OHLC and invalid candle counts safely', async () => {
     expect(() => normalizeH4Candle({ time: '2026-07-21T21:00:00.000Z', complete: true, mid: { o: '10', h: '9', l: '8', c: '10' } }, 'NAS100_USD')).toThrow('Invalid OANDA response');
     const provider = new OandaProvider(configured(), vi.fn());
     await expect(provider.getH4Candles('NAS100_USD', 0)).rejects.toThrow('Candle count must be an integer between 1 and 5000.');
     await expect(provider.getH4Candles('NAS100_USD', 5001)).rejects.toThrow('Candle count must be an integer between 1 and 5000.');
+    const duplicateTimes = vi.fn(async () => new Response(JSON.stringify({ candles: [
+      { time: '2026-07-21T00:00:00.000Z', complete: true, mid: { o: '10', h: '11', l: '9', c: '10' } },
+      { time: '2026-07-21T00:00:00.000Z', complete: true, mid: { o: '10', h: '11', l: '9', c: '10' } },
+    ] }), { status: 200 }));
+    await expect(new OandaProvider(configured(), duplicateTimes).getDailyCandles('NAS100_USD')).rejects.toThrow('candle timestamps must be unique');
   });
 });

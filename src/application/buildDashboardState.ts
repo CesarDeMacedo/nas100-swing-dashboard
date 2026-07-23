@@ -1,6 +1,6 @@
 import type { AnalysisReport } from '../schemas/analysis';
 import type { CandleDataset } from '../schemas/candles';
-import { buildTechnicalContext } from '../domain/technicalContext';
+import { buildTechnicalContext, type TechnicalContext } from '../domain/technicalContext';
 import { calculateTradePlan, tradePlanToPatienceInputs } from '../domain/tradePlan';
 import { evaluatePatienceFilter, type CrossMarketInput, type EventRiskState } from '../domain/patienceFilter';
 import { decideStrategy } from '../domain/strategyDecision';
@@ -23,8 +23,8 @@ const actionLabel = (action: AnalysisReport['action']) => {
   return labels[action];
 };
 
-export function buildDashboardState(analysis: AnalysisReport, candleDataset: CandleDataset): DashboardState {
-  const technicalContext = buildTechnicalContext(candleDataset.candles);
+export function buildDashboardState(analysis: AnalysisReport, candleDataset: CandleDataset, technicalContextOverride?: TechnicalContext): DashboardState {
+  const technicalContext = technicalContextOverride ?? buildTechnicalContext(candleDataset.candles);
   const latestCandle = candleDataset.candles.at(-1) ?? null;
   const longPlan = calculateTradePlan({ direction: 'long', technicalContext, latestCandle, preferredEntryZone: analysis.preferredEntryZone, supportZones: analysis.supportZones, resistanceZones: analysis.resistanceZones });
   const shortPlan = calculateTradePlan({ direction: 'short', technicalContext, latestCandle, preferredEntryZone: analysis.preferredEntryZone, supportZones: analysis.supportZones, resistanceZones: analysis.resistanceZones });

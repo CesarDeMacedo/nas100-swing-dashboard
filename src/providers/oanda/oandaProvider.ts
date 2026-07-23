@@ -1,5 +1,5 @@
 import { OandaClient } from './oandaClient';
-import type { OandaConfiguration, OandaH4Candle, OandaH4CandleResult, OandaInstrument } from './types';
+import type { OandaCandle, OandaCandleGranularity, OandaCandleResult, OandaDailyCandleResult, OandaConfiguration, OandaH4Candle, OandaH4CandleResult, OandaInstrument } from './types';
 
 type ConfiguredOandaConfiguration = Extract<OandaConfiguration, { state: 'configured' }>;
 
@@ -29,7 +29,7 @@ export const normalizeInstrument = (value: unknown): OandaInstrument => {
 export const findNas100CandidatesFromInstruments = (instruments: OandaInstrument[]) =>
   instruments.filter(({ name, displayName }) => /nas\s*100|nas100|us\s*100|us100|technology.*index|index.*technology/i.test(`${name} ${displayName}`));
 
-export const normalizeH4Candle = (value: unknown, instrument: string): OandaH4Candle => {
+export const normalizeCandle = <TTimeframe extends OandaCandleGranularity>(value: unknown, instrument: string, timeframe: TTimeframe): OandaCandle & { timeframe: TTimeframe } => {
   if (!isRecord(value) || !isRecord(value.mid)) return invalidPayload('candle midpoint data is required.');
   const time = string(value.time);
   const open = decimal(value.mid.o);
@@ -40,7 +40,20 @@ export const normalizeH4Candle = (value: unknown, instrument: string): OandaH4Ca
   const volume = value.volume === undefined ? null : decimal(value.volume);
   if (!time || Number.isNaN(Date.parse(time)) || open === null || high === null || low === null || close === null || typeof complete !== 'boolean' || (value.volume !== undefined && volume === null)) return invalidPayload('candle fields are incomplete.');
   if (high < Math.max(open, close) || low > Math.min(open, close) || high < low) return invalidPayload('candle OHLC values are invalid.');
-  return { time, open, high, low, close, isClosed: complete, volume, instrument, timeframe: 'H4', source: 'oanda-v20' };
+  return { time, open, high, low, close, isClosed: complete, volume, instrument, timeframe, source: 'oanda-v20' };
+};
+
+export const normalizeH4Candle = (value: unknown, instrument: string): OandaH4Candle => normalizeCandle(value, instrument, 'H4');
+
+const validateCandleSeries = <TTimeframe extends OandaCandleGranularity>(candles: Array<OandaCandle & { timeframe: TTimeframe }>) => {
+  const timestamps = new Set<string>();
+  candles.forEach((candle, index) => {
+    if (timestamps.has(candle.time)) invalidPayload('candle timestamps must be unique.');
+    timestamps.add(candle.time);
+    const previous = candles[index - 1];
+    if (previous && Date.parse(candle.time) <= Date.parse(previous.time)) invalidPayload('candles must be in ascending chronological order.');
+  });
+  return candles;
 };
 
 export class OandaProvider {
@@ -60,11 +73,19 @@ export class OandaProvider {
     return findNas100CandidatesFromInstruments(await this.getAccountInstruments());
   }
 
-  public async getH4Candles(instrument: string, count = 250): Promise<OandaH4CandleResult> {
+  public async getCandles<TTimeframe extends OandaCandleGranularity>(instrument: string, timeframe: TTimeframe, count = 250): Promise<OandaCandleResult<TTimeframe>> {
     if (!instrument.trim()) throw new Error('An explicit OANDA instrument is required.');
     if (!Number.isInteger(count) || count < 1 || count > 5000) throw new Error('Candle count must be an integer between 1 and 5000.');
-    const payload = await this.client.getJson(`/v3/instruments/${encodeURIComponent(instrument)}/candles`, { granularity: 'H4', price: 'M', count: String(count) });
+    const payload = await this.client.getJson(`/v3/instruments/${encodeURIComponent(instrument)}/candles`, { granularity: timeframe, price: 'M', count: String(count) });
     if (!isRecord(payload) || !Array.isArray(payload.candles)) return invalidPayload('candles array is required.');
-    return { provider: 'oanda-v20', environment: this.configuration.environment, instrument, timeframe: 'H4', candles: payload.candles.map((candle) => normalizeH4Candle(candle, instrument)) };
+    return { provider: 'oanda-v20', environment: this.configuration.environment, instrument, timeframe, candles: validateCandleSeries(payload.candles.map((candle) => normalizeCandle(candle, instrument, timeframe))) };
+  }
+
+  public getH4Candles(instrument: string, count = 250): Promise<OandaH4CandleResult> {
+    return this.getCandles(instrument, 'H4', count);
+  }
+
+  public getDailyCandles(instrument: string, count = 250): Promise<OandaDailyCandleResult> {
+    return this.getCandles(instrument, 'D', count);
   }
 }

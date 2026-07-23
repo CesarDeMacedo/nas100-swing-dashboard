@@ -1,5 +1,11 @@
 # Changelog
 
+## OANDA Multi-Timeframe Data Foundation
+
+- Manual OANDA analysis now fetches and validates separate H4 and Daily midpoint candle datasets; open candles are excluded from both.
+- H4 remains the execution/run identity while Daily is used only for Daily Regime metadata; cross-market and event-risk remain unavailable.
+- The dashboard remains mock-backed and the scheduler remains synthetic and unchanged.
+
 ## Manual OANDA Analysis Run
 
 - Added a manual, read-only `POST /runs/manual-oanda` path that requests 250 OANDA H4 midpoint candles, excludes open candles, and saves immutable completed-candle reports locally.

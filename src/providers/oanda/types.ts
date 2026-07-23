@@ -30,7 +30,9 @@ export type OandaInstrument = {
   pipLocation: number;
 };
 
-export type OandaH4Candle = {
+export type OandaCandleGranularity = 'H4' | 'D';
+
+export type OandaCandle = {
   time: string;
   open: number;
   high: number;
@@ -39,14 +41,19 @@ export type OandaH4Candle = {
   isClosed: boolean;
   volume: number | null;
   instrument: string;
-  timeframe: 'H4';
+  timeframe: OandaCandleGranularity;
   source: 'oanda-v20';
 };
 
-export type OandaH4CandleResult = {
+export type OandaCandleResult<TTimeframe extends OandaCandleGranularity = OandaCandleGranularity> = {
   provider: 'oanda-v20';
   environment: OandaEnvironment;
   instrument: string;
-  timeframe: 'H4';
-  candles: OandaH4Candle[];
+  timeframe: TTimeframe;
+  candles: Array<OandaCandle & { timeframe: TTimeframe }>;
 };
+
+export type OandaH4Candle = OandaCandle & { timeframe: 'H4' };
+export type OandaH4CandleResult = OandaCandleResult<'H4'>;
+export type OandaDailyCandle = OandaCandle & { timeframe: 'D' };
+export type OandaDailyCandleResult = OandaCandleResult<'D'>;
