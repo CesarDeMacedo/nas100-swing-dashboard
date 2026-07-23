@@ -5,6 +5,7 @@ export type OandaConfiguration =
       state: 'configured';
       environment: OandaEnvironment;
       baseUrl: string;
+      streamBaseUrl: string;
       accountId: string;
       apiToken: string;
       nas100Instrument: string | null;

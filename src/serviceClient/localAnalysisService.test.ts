@@ -36,6 +36,12 @@ describe('localAnalysisService', () => {
     await expect(client.getRunByKey('fixture-run')).resolves.toMatchObject({ kind: 'succeeded', report: { primaryReason: 'Pending pullback.' } });
   });
 
+  it('loads OANDA preview candles only through the local service endpoint', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ provider: 'oanda-v20', environment: 'practice', instrument: 'NAS100_USD', timeframe: 'H4', candles: [{ time: '2026-07-22T00:00:00.000Z', open: 1, high: 2, low: 0.5, close: 1.5, isClosed: false, instrument: 'NAS100_USD', timeframe: 'H4', source: 'oanda-v20' }] }), { status: 200 })));
+    await expect(createLocalAnalysisServiceClient('http://service').getOandaCandles?.(250)).resolves.toMatchObject({ kind: 'succeeded', data: { candles: [{ isClosed: false }] } });
+    expect(fetch).toHaveBeenCalledWith('http://service/providers/oanda/candles?count=250', undefined);
+  });
+
   it('handles empty, failed, and malformed history responses', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ runs: [] }), { status: 200 })));
     await expect(createLocalAnalysisServiceClient('http://service').listRecentRuns(10)).resolves.toMatchObject({ kind: 'empty' });

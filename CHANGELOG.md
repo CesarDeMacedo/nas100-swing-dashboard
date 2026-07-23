@@ -1,5 +1,10 @@
 # Changelog
 
+## Saved OANDA Live Observation
+
+- Added local SSE observation of live OANDA price and open H4 candle only while reviewing a saved OANDA analysis.
+- Saved reports, scheduler, and persistence remain unchanged; open candles are not used for decisions.
+
 ## Optional OANDA Scheduler Mode
 
 - Added explicit `NAS100_DASHBOARD_SCHEDULER_PROVIDER=oanda` opt-in; fixture scheduling remains the default.
@@ -7,7 +12,7 @@
 
 ## Saved OANDA Dashboard Review
 
-- Added session-only viewing of supported saved OANDA report snapshots from Analysis History in the existing dashboard layout.
+- Added session-only viewing of supported saved OANDA report snapshots from Analysis History in the existing dashboard layout, with server-relayed OANDA v20 pricing-stream observation for the open H4 candle.
 - This is historical saved analysis, not streaming; mock remains the refresh default and scheduler behavior is unchanged.
 
 ## Deterministic OANDA Market Levels
@@ -68,3 +73,6 @@
 - Completed the deterministic NAS100 strategy and report pipeline through Phase 8C.
 - Dashboard and Markdown report now share the calculated `DashboardState`.
 - Verified 160 passing tests with synthetic market data only and no trade execution capability.
+- Added an on-demand read-only OANDA H4 chart preview; it does not run strategy analysis.
+- Chart navigation and saved-OANDA layout were stabilized: pan/zoom state is preserved, Reset view is explicit, and saved provenance is compactly presented. Live OANDA observation remains experimental.
+- Chart navigation and saved-OANDA layout were stabilized: pan/zoom state is preserved, Reset view is explicit, and saved provenance is compactly presented. Live OANDA observation remains experimental.

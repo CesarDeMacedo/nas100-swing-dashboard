@@ -7,6 +7,7 @@ import {
   formatChartPrice,
   mapPriceLines,
   mapPriceZones,
+  selectVisibleSavedLevels,
   toChartCandles,
   type ChartPalette,
 } from './chartAdapter';
@@ -23,6 +24,18 @@ const palette: ChartPalette = {
 
 const analysisResult = parseAnalysis(currentAnalysisSource);
 const candleResult = parseCandleDataset(candleDataset);
+
+test('saved levels retain the three nearest relevant zones and report hidden count', () => {
+  const source = structuredClone(currentAnalysisSource) as any;
+  source.currentPrice = 100;
+  source.supportZones = [90, 95, 98, 99].map((high, index) => ({ id: `s${index}`, type: 'SUPPORT', low: high - 1, high, label: `s${index}`, source: 'OANDA', confidence: 70, lockedByUser: false }));
+  source.resistanceZones = [101, 105, 110, 120].map((low, index) => ({ id: `r${index}`, type: 'RESISTANCE', low, high: low + 1, label: `r${index}`, source: 'OANDA', confidence: 70, lockedByUser: false }));
+  const result = selectVisibleSavedLevels(source);
+  expect(result.supports).toHaveLength(3);
+  expect(result.resistances).toHaveLength(3);
+  expect(result.resistances.map((zone) => zone.low)).toEqual([101, 105, 110]);
+  expect(result.hiddenCount).toBe(2);
+});
 
 if (!analysisResult.success || !candleResult.success) {
   throw new Error('Approved chart fixtures must validate before adapter tests run.');

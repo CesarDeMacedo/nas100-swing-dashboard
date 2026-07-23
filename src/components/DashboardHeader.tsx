@@ -1,5 +1,6 @@
 import type { Analysis } from '../domain/analysis';
 import { formatTimeframeLabel } from '../lib/format';
+import { formatPrice } from '../lib/format';
 import type { ManualRunResult, ServiceAvailability } from '../serviceClient/localAnalysisService';
 import { LocalServiceControl } from './LocalServiceControl';
 
@@ -12,13 +13,16 @@ type DashboardHeaderProps = Pick<Analysis, 'displayName' | 'instrument' | 'timef
   savedOandaProvenance?: string | null;
   savedSourceCandleTime?: string | null;
   onReturnToMock?: () => void;
+  onOpenOandaPreview?: () => void;
+  liveObservationStatus?: string | null;
+  liveObservationPrice?: number | null;
 };
 
-export function DashboardHeader({ displayName, instrument, timeframe, serviceAvailability, manualRunState, manualRunResult, onManualRun, onOpenHistory, savedOandaProvenance, savedSourceCandleTime, onReturnToMock }: DashboardHeaderProps) {
+export function DashboardHeader({ displayName, instrument, timeframe, serviceAvailability, manualRunState, manualRunResult, onManualRun, onOpenHistory, savedOandaProvenance, savedSourceCandleTime, onReturnToMock, onOpenOandaPreview, liveObservationStatus, liveObservationPrice }: DashboardHeaderProps) {
   const titleTimeframe = formatTimeframeLabel(timeframe);
 
   return (
-    <div className="dashboard-header">
+    <div className={`dashboard-header${savedOandaProvenance ? ' dashboard-header--saved-oanda' : ''}`}>
       <div className="dashboard-title-block">
       <p className="dashboard-title-block__kicker">Swing intelligence</p>
       <h1>
@@ -29,10 +33,11 @@ export function DashboardHeader({ displayName, instrument, timeframe, serviceAva
         <span aria-hidden="true">·</span> {timeframe}
       </p>
       </div>
-      {savedOandaProvenance ? <div role="status"><strong>{savedOandaProvenance} — SAVED ANALYSIS</strong><small>Source H4: {savedSourceCandleTime ?? 'Unavailable'}</small>{onReturnToMock ? <button type="button" onClick={onReturnToMock}>Return to mock dashboard</button> : null}</div> : null}
+      {savedOandaProvenance ? <div className="saved-oanda-actions">{onOpenHistory ? <button type="button" onClick={onOpenHistory}>Analysis history</button> : null}{onReturnToMock ? <button type="button" onClick={onReturnToMock}>Return to mock dashboard</button> : null}</div> : null}
       {serviceAvailability && manualRunState && onManualRun ? (
         <LocalServiceControl availability={serviceAvailability} runState={manualRunState} result={manualRunResult ?? null} onRun={onManualRun} onOpenHistory={onOpenHistory} />
       ) : null}
+      {!savedOandaProvenance && serviceAvailability === 'available' && onOpenOandaPreview ? <button type="button" onClick={onOpenOandaPreview}>OANDA chart preview</button> : null}
     </div>
   );
 }

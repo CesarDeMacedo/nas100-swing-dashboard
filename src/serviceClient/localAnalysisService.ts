@@ -88,7 +88,15 @@ export type LocalAnalysisServiceClient = {
   runManualFixture: () => Promise<ManualRunResult>;
   listRecentRuns: (limit: number) => Promise<HistoryResult>;
   getRunByKey: (runKey: string) => Promise<RunDetailResult>;
+  getOandaCandles?: (count?: number) => Promise<OandaPreviewResult>;
+  subscribeOandaLiveH4?: (listener: (event: OandaLiveEvent) => void) => () => void;
 };
+
+export type OandaPreviewCandle = { time: string; open: number; high: number; low: number; close: number; isClosed: boolean; instrument: string; timeframe: 'H4'; source: 'oanda-v20' };
+export type OandaPreviewData = { provider: 'oanda-v20'; environment: 'practice' | 'live'; instrument: string; timeframe: 'H4'; candles: OandaPreviewCandle[] };
+export type OandaPreviewResult = { kind: 'succeeded'; data: OandaPreviewData } | { kind: 'failed' | 'malformed_response'; message: string };
+
+export type OandaLiveEvent = { type: 'connection' | 'snapshot' | 'price' | 'candle' | 'heartbeat' | 'error'; payload: Record<string, unknown> };
 
 const serviceUrl = () =>
   (import.meta.env.VITE_NAS100_SERVICE_URL || DEFAULT_LOCAL_ANALYSIS_SERVICE_URL).replace(/\/$/, '');
@@ -134,6 +142,15 @@ const isAnalysisHistorySummary = (value: unknown): value is AnalysisHistorySumma
   if (!value || typeof value !== 'object') return false;
   const report = value as Record<string, unknown>;
   return typeof report.action === 'string' && typeof report.direction === 'string' && (typeof report.score === 'number' || report.score === null) && (typeof report.grade === 'string' || report.grade === null) && (typeof report.sourceCandleTime === 'string' || report.sourceCandleTime === null) && typeof report.isActionable === 'boolean';
+};
+const isOandaPreviewData = (value: unknown): value is OandaPreviewData => {
+  if (!value || typeof value !== 'object') return false;
+  const data = value as Record<string, unknown>;
+  return data.provider === 'oanda-v20' && (data.environment === 'practice' || data.environment === 'live') && typeof data.instrument === 'string' && data.timeframe === 'H4' && Array.isArray(data.candles) && data.candles.every((candle) => {
+    if (!candle || typeof candle !== 'object') return false;
+    const item = candle as Record<string, unknown>;
+    return typeof item.time === 'string' && [item.open, item.high, item.low, item.close].every((price) => typeof price === 'number' && Number.isFinite(price)) && typeof item.isClosed === 'boolean' && item.instrument === data.instrument && item.timeframe === 'H4' && item.source === 'oanda-v20';
+  });
 };
 
 const responseJson = async (response: Response): Promise<unknown> => {
@@ -208,6 +225,29 @@ export function createLocalAnalysisServiceClient(baseUrl = serviceUrl()): LocalA
       } catch {
         return { kind: 'failed', message: 'Start the local analysis service to view analysis history.' };
       }
+    },
+    async getOandaCandles(count = 250) {
+      try {
+        const response = await request(`/providers/oanda/candles?count=${encodeURIComponent(String(count))}`);
+        const payload = await responseJson(response);
+        if (!response.ok) return { kind: 'failed', message: serviceErrorMessage(payload, 'OANDA chart preview data could not be loaded.') };
+        return isOandaPreviewData(payload) ? { kind: 'succeeded', data: payload } : invalidResponse('Local service returned invalid OANDA candle data.');
+      } catch { return { kind: 'failed', message: 'Local service is unavailable.' }; }
+    },
+    subscribeOandaLiveH4(listener) {
+      const source = new EventSource(`${baseUrl}/providers/oanda/live-h4`);
+      const events: OandaLiveEvent['type'][] = ['connection', 'snapshot', 'price', 'candle', 'heartbeat', 'error'];
+      for (const type of events) source.addEventListener(type, (event) => {
+        try {
+          const payload = JSON.parse((event as MessageEvent<string>).data);
+          if (payload && typeof payload === 'object') listener({ type, payload: payload as Record<string, unknown> });
+          else listener({ type: 'error', payload: { state: 'offline', message: 'Malformed live observation event.' } });
+        } catch {
+          listener({ type: 'error', payload: { state: 'offline', message: 'Malformed live observation event.' } });
+        }
+      });
+      source.onerror = () => listener({ type: 'error', payload: { state: 'offline', message: 'Local live observation connection is unavailable.' } });
+      return () => source.close();
     },
   };
 }

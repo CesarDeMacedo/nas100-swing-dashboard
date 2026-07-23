@@ -1,5 +1,9 @@
 # UI Architecture
 
+## Current saved-OANDA behavior
+
+The dashboard defaults to mock data on refresh. A saved OANDA report can be opened from Analysis History and is rendered from its immutable non-sensitive snapshot; no mock values are mixed into that view. OANDA Chart Preview is a separate on-demand chart-only screen and does not run strategy analysis. The chart supports wheel zoom, drag pan, price-scale adjustment, pinch zoom, double-click scale reset, and Reset view. Saved provenance and source H4 metadata are compactly displayed near the chart. Experimental live observation must not be described as reliable real-time until lifecycle tests are complete.
+
 ## Visual direction
 
 The approved template is a layout and treatment reference, not an asset. Its visual hierarchy is: product identity at upper left, dominant action banner across the top center, compact score/regime metadata at upper right, a large chart on the left, evidence and instruction cards in a right sidebar, and a metrics strip along the bottom. The application recreates this hierarchy with React components and structured data.

@@ -31,9 +31,13 @@ type DashboardProps = {
   savedOandaProvenance?: string | null;
   savedSourceCandleTime?: string | null;
   onReturnToMock?: () => void;
+  liveObservationStatus?: string | null;
+  liveObservationPrice?: number | null;
+  onOpenOandaPreview?: () => void;
+  savedMetadata?: { provenance: string; sourceTime: string | null; latestPrice: number | null; liveStatus: string | null };
 };
 
-export function Dashboard({ analysis, candleResult, dashboardState, serviceAvailability, manualRunState, manualRunResult, onManualRun, historyOpen = false, history, historyDetail, selectedHistoryRunKey = null, onOpenHistory, onCloseHistory, onRefreshHistory, onSelectHistoryRun, onViewHistoryInDashboard, savedOandaProvenance, savedSourceCandleTime, onReturnToMock }: DashboardProps) {
+export function Dashboard({ analysis, candleResult, dashboardState, serviceAvailability, manualRunState, manualRunResult, onManualRun, historyOpen = false, history, historyDetail, selectedHistoryRunKey = null, onOpenHistory, onCloseHistory, onRefreshHistory, onSelectHistoryRun, onViewHistoryInDashboard, savedOandaProvenance, savedSourceCandleTime, onReturnToMock, liveObservationStatus, liveObservationPrice, onOpenOandaPreview, savedMetadata }: DashboardProps) {
   const state = dashboardState;
 
   return (
@@ -51,6 +55,9 @@ export function Dashboard({ analysis, candleResult, dashboardState, serviceAvail
           savedOandaProvenance={savedOandaProvenance}
           savedSourceCandleTime={savedSourceCandleTime}
           onReturnToMock={onReturnToMock}
+          liveObservationStatus={liveObservationStatus}
+          liveObservationPrice={liveObservationPrice}
+          onOpenOandaPreview={onOpenOandaPreview}
         />
         <PrimaryActionBanner
           action={state?.action ?? analysis.action}
@@ -73,6 +80,7 @@ export function Dashboard({ analysis, candleResult, dashboardState, serviceAvail
           analysis={analysis}
           candleResult={candleResult}
           dashboardState={state}
+          savedMetadata={savedMetadata}
         />
         <AnalysisSidebar analysis={analysis} dashboardState={state} />
       </div>

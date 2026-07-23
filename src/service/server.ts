@@ -63,6 +63,8 @@ const json = (response: ServerResponse, statusCode: number, payload: unknown) =>
 const error = (response: ServerResponse, statusCode: number, code: string, message: string) =>
   json(response, statusCode, { error: { code, message } });
 
+const sse = (response: ServerResponse, event: string, payload: unknown) => response.write(`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`);
+
 const summary = (run: StoredAnalysisRun, report: NonNullable<ReturnType<typeof runSyntheticFixtureAnalysis>['report']>, alreadyExists: boolean) => ({
   id: run.id,
   runKey: run.runKey,
@@ -106,6 +108,75 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
   let repository: AnalysisRepository | null = null;
   let server: Server | null = null;
   let boundPort = configuredPort;
+  const liveSubscribers = new Set<ServerResponse>();
+  let liveAbort: AbortController | null = null;
+  let liveOpenCandle: Awaited<ReturnType<NonNullable<typeof oandaProvider>['getH4Candles']>>['candles'][number] | null = null;
+  let liveLastCompletedTime: string | null = null;
+  let liveStopTimer: ReturnType<typeof setTimeout> | null = null;
+  let liveReconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  let liveReconnectAttempt = 0;
+  let liveRolloverRefresh: Promise<void> | null = null;
+  const reconnectDelays = [1000, 2000, 5000, 10000];
+  const h4Window = (time: string) => Math.floor(Date.parse(time) / (4 * 60 * 60 * 1000));
+  const liveBroadcast = (event: string, payload: unknown) => liveSubscribers.forEach((subscriber) => sse(subscriber, event, payload));
+  const liveSnapshot = async () => {
+    if (!oandaProvider || !oandaConfiguration.nas100Instrument || oandaConfiguration.state !== 'configured') throw new Error('unconfigured');
+    const source = await oandaProvider.getH4Candles(oandaConfiguration.nas100Instrument, 2);
+    liveOpenCandle = [...source.candles].reverse().find((candle) => !candle.isClosed) ?? null;
+    liveLastCompletedTime = source.candles.filter((candle) => candle.isClosed).at(-1)?.time ?? null;
+    return { provider: 'oanda-v20', environment: oandaConfiguration.environment, instrument: source.instrument, receivedAt: new Date().toISOString(), currentPrice: liveOpenCandle?.close ?? null, openCandle: liveOpenCandle, lastCompletedH4SourceTime: liveLastCompletedTime, streamState: 'live' as const };
+  };
+  const startLiveStream = async () => {
+    if (liveAbort || !oandaProvider || !oandaConfiguration.nas100Instrument) return;
+    const controller = new AbortController();
+    liveAbort = controller;
+    try {
+      const snapshot = await liveSnapshot();
+      liveBroadcast('connection', { state: 'connecting', receivedAt: snapshot.receivedAt });
+      liveBroadcast('snapshot', snapshot);
+      const response = await oandaProvider.openPricingStream(oandaConfiguration.nas100Instrument, controller.signal);
+      liveReconnectAttempt = 0;
+      liveBroadcast('connection', { state: 'live', receivedAt: new Date().toISOString() });
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('missing stream body');
+      let pending = '';
+      while (!controller.signal.aborted) {
+        const chunk = await reader.read();
+        if (chunk.done) break;
+        pending += new TextDecoder().decode(chunk.value, { stream: true });
+        const lines = pending.split('\n'); pending = lines.pop() ?? '';
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const message: unknown = JSON.parse(line);
+            if (!message || typeof message !== 'object') throw new Error('invalid');
+            const record = message as Record<string, unknown>;
+            if (record.type === 'PricingHeartbeat') { liveBroadcast('heartbeat', { receivedAt: typeof record.time === 'string' ? record.time : new Date().toISOString(), streamState: 'live' }); continue; }
+            if (record.type !== 'PRICE' || !Array.isArray(record.bids) || !Array.isArray(record.asks)) continue;
+            const bid = Number((record.bids[0] as Record<string, unknown> | undefined)?.price);
+            const ask = Number((record.asks[0] as Record<string, unknown> | undefined)?.price);
+            if (!Number.isFinite(bid) || !Number.isFinite(ask)) throw new Error('invalid price');
+            const midpoint = (bid + ask) / 2;
+            const receivedAt = typeof record.time === 'string' ? record.time : new Date().toISOString();
+            if (liveOpenCandle && Number.isFinite(Date.parse(receivedAt)) && h4Window(receivedAt) > h4Window(liveOpenCandle.time) && !liveRolloverRefresh) {
+              liveRolloverRefresh = liveSnapshot().then(() => undefined).catch(() => { liveBroadcast('error', { state: 'stale', message: 'OANDA live H4 rollover refresh is unavailable.', receivedAt: new Date().toISOString() }); }).finally(() => { liveRolloverRefresh = null; });
+            }
+            if (liveOpenCandle) liveOpenCandle = { ...liveOpenCandle, high: Math.max(liveOpenCandle.high, midpoint), low: Math.min(liveOpenCandle.low, midpoint), close: midpoint, isClosed: false };
+            liveBroadcast('price', { currentPrice: midpoint, receivedAt, streamState: 'live' });
+            if (liveOpenCandle) liveBroadcast('candle', { candle: liveOpenCandle, receivedAt });
+          } catch { liveBroadcast('error', { state: 'stale', message: 'OANDA live observation received invalid stream data.', receivedAt: new Date().toISOString() }); }
+        }
+      }
+      if (!controller.signal.aborted) { liveBroadcast('error', { state: 'reconnecting', message: 'OANDA live observation is reconnecting.', receivedAt: new Date().toISOString() }); scheduleReconnect(); }
+    } catch { if (!controller.signal.aborted) { liveBroadcast('error', { state: 'reconnecting', message: 'OANDA live observation is reconnecting.', receivedAt: new Date().toISOString() }); scheduleReconnect(); } }
+    finally { if (liveAbort === controller) liveAbort = null; }
+  };
+  const scheduleReconnect = () => {
+    if (liveSubscribers.size === 0 || liveReconnectTimer) return;
+    const delay = reconnectDelays[Math.min(liveReconnectAttempt, reconnectDelays.length - 1)]; liveReconnectAttempt += 1;
+    liveReconnectTimer = setTimeout(() => { liveReconnectTimer = null; void startLiveStream(); }, delay);
+  };
+  const stopLiveStream = () => { liveAbort?.abort(); liveAbort = null; if (liveReconnectTimer) clearTimeout(liveReconnectTimer); liveReconnectTimer = null; liveReconnectAttempt = 0; liveOpenCandle = null; };
   const scheduler = new FixtureScheduler({
     enabled: schedulerEnabled,
     intervalMs: options.schedulerIntervalMs,
@@ -160,6 +231,22 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
 
       if (request.method === 'GET' && url.pathname === '/providers/oanda/status') {
         json(response, 200, oandaConfigurationStatus(oandaConfiguration));
+        return;
+      }
+
+      if (request.method === 'GET' && url.pathname === '/providers/oanda/live-h4') {
+        if (!oandaProvider || !oandaConfiguration.nas100Instrument || oandaConfiguration.state !== 'configured') {
+          error(response, 409, 'OANDA_UNCONFIGURED', 'OANDA live observation requires configured credentials and an explicit instrument.');
+          return;
+        }
+        response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
+        if (liveStopTimer) { clearTimeout(liveStopTimer); liveStopTimer = null; }
+        liveSubscribers.add(response);
+        void startLiveStream();
+        request.on('close', () => {
+          liveSubscribers.delete(response);
+          if (liveSubscribers.size === 0) liveStopTimer = setTimeout(stopLiveStream, 1_000);
+        });
         return;
       }
 
@@ -316,6 +403,8 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
     stop: () =>
       new Promise((resolve, reject) => {
         scheduler.stop();
+        stopLiveStream();
+        liveSubscribers.clear();
         const activeServer = server;
         server = null;
         if (!activeServer) {

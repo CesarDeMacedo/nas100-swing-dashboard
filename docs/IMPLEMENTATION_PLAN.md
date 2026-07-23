@@ -1,5 +1,9 @@
 # Implementation Plan
 
+## Current implementation boundary
+
+Manual OANDA analysis, immutable saved display snapshots, saved-dashboard review, Chart Preview, and optional fixture-default/OANDA-opt-in scheduling are implemented. H4 and Daily inputs remain separate and completed-candle safety is required. Chart navigation preserves the user viewport until explicit Reset view. Cross-market and event-risk data remain unavailable. Live OANDA observation is experimental; shared-subscriber, reconnect, rollover, and saved-report invariance lifecycle testing remains unfinished. The browser never connects directly to OANDA.
+
 Each phase is an independently reviewable request. Do not start the next phase without user approval of the current stop point.
 
 ## Phase 0: Foundation and tooling
@@ -236,6 +240,8 @@ New manual OANDA reports derive deterministic support, resistance, preferred-ent
 Saved OANDA reports with a non-sensitive display snapshot can now be opened from History in the existing dashboard layout for the current browser session. This is historical review only: mock data remains the refresh default, and neither the scheduler nor browser starts OANDA loading automatically.
 
 The in-process scheduler now defaults to `fixture` and supports an explicit `oanda` provider mode through `NAS100_DASHBOARD_SCHEDULER_PROVIDER`. OANDA scheduling is read-only, uses the same manual pipeline and existing Toronto slots, and runs only while the local service is active. Cross-market and event-risk remain unavailable.
+
+Saved OANDA dashboard review can optionally open a local SSE observation connection for OANDA v20 pricing-stream updates and the current open H4 candle. It never changes the persisted report or strategy decision, starts only for an active saved OANDA view, and does not create a browser-to-OANDA connection.
 
 - Objective: replace mock provider with a licensed live provider through adapters.
 - Scope: credentials, symbol mapping, OHLC, US500/US30 primary confirmation, Russell 2000 complementary confirmation, data health, and provider status.

@@ -6,7 +6,7 @@ type SetupSummaryProps = {
   dailyRegime: string;
   status: string;
   bias: string;
-  confidence: number;
+  confidence: number | null;
   isActionable?: boolean;
   premiumSetupState?: string;
 };
@@ -50,7 +50,7 @@ export function SetupSummary({
         <strong data-testid="summary-grade">{grade ?? 'Not available'}</strong>
         <small data-testid="summary-actionability">
           {isActionable === undefined
-            ? `${confidence}% confidence`
+            ? confidence === null || confidence === 0 ? 'Not available' : `${confidence}% confidence`
             : isActionable
               ? 'Actionable'
               : premiumSetupLabel(premiumSetupState)}

@@ -1,5 +1,9 @@
 # Data Model
 
+## Current runtime guarantees
+
+Reports and runs are immutable local records. OANDA H4 and Daily candle datasets remain separate, and only completed candles can support confirmed report decisions. Saved OANDA display snapshots contain non-sensitive chart/report data for historical dashboard review; Chart Preview data is on-demand and is not persisted. No schema contains trade execution capability, browser credentials, or broker-order data.
+
 ## Phase 3 status
 
 Phase 3 is implemented. Runtime contracts live in `src/schemas/`; TypeScript types are inferred from Zod. The existing `src/domain/analysis.ts` and `src/domain/candles.ts` modules are thin parsing and compatibility boundaries, not competing schema definitions.

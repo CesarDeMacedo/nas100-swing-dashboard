@@ -50,6 +50,12 @@ Saved OANDA reports that include a display snapshot can be reviewed in the dashb
 
 The scheduler defaults to synthetic fixture mode. Set `NAS100_DASHBOARD_SCHEDULER_PROVIDER=oanda` only for an explicit read-only OANDA opt-in while `npm run service` is active; Toronto slots are unchanged and cross-market/event-risk inputs remain unavailable.
 
+When viewing a saved OANDA analysis, the dashboard can observe local server-relayed OANDA v20 pricing-stream updates and the open H4 candle. This is observation-only: decisions continue to use the saved completed-candle report, and the browser never connects to OANDA directly.
+
+The dashboard also provides an on-demand, read-only OANDA H4 chart preview. It renders local-service candle data only and does not run strategy analysis.
+
+The shared candlestick chart supports mouse-wheel zoom, drag-to-pan, price-scale adjustment, double-click scale reset, pinch zoom, and an explicit Reset view. Saved OANDA metadata is shown compactly near the chart; mock data remains the default after refresh.
+
 ## Local Synthetic Scheduler
 
 While `npm run service` is running, the in-process scheduler evaluates `America/Toronto` time every 15 seconds and runs only these one-minute post-close slots: Monday-Friday at 1:01 p.m., and Sunday-Friday at 9:01 p.m. It skips Saturday and the Sunday 1:01 p.m. slot.

@@ -21,9 +21,10 @@ vi.mock('lightweight-charts', async (importOriginal) => {
         attachPrimitive: vi.fn(),
         detachPrimitive: vi.fn(),
         createPriceLine: vi.fn(),
+        removePriceLine: vi.fn(),
         priceToCoordinate: vi.fn((price: number) => price),
       };
-      const timeScale = { setVisibleLogicalRange: vi.fn() };
+      const timeScale = { setVisibleLogicalRange: vi.fn(), fitContent: vi.fn() };
 
       return {
         addSeries: vi.fn(() => series),

@@ -34,4 +34,17 @@ export class OandaClient {
       throw new OandaClientError('OANDA provider returned malformed JSON.');
     }
   }
+
+  public async getStream(path: string, query: Record<string, string>, signal: AbortSignal): Promise<Response> {
+    const url = new URL(path, this.configuration.streamBaseUrl);
+    Object.entries(query).forEach(([key, value]) => url.searchParams.set(key, value));
+    try {
+      const response = await this.fetcher(url, { method: 'GET', signal, headers: { Authorization: `Bearer ${this.configuration.apiToken}`, Accept: 'application/json' } });
+      if (!response.ok) throw new OandaClientError(`OANDA provider returned HTTP ${response.status}.`, response.status);
+      return response;
+    } catch (cause) {
+      if (cause instanceof OandaClientError) throw cause;
+      throw new OandaClientError('OANDA provider pricing stream failed.');
+    }
+  }
 }

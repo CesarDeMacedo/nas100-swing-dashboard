@@ -5,6 +5,11 @@ const BASE_URLS: Record<OandaEnvironment, string> = {
   live: 'https://api-fxtrade.oanda.com',
 };
 
+const STREAM_BASE_URLS: Record<OandaEnvironment, string> = {
+  practice: 'https://stream-fxpractice.oanda.com',
+  live: 'https://stream-fxtrade.oanda.com',
+};
+
 const optionalValue = (value: string | undefined) => value?.trim() || null;
 
 export const parseOandaConfiguration = (environment: NodeJS.ProcessEnv = process.env): OandaConfiguration => {
@@ -34,7 +39,8 @@ export const parseOandaConfiguration = (environment: NodeJS.ProcessEnv = process
   return {
     state: 'configured',
     environment: requestedEnvironment,
-    baseUrl: BASE_URLS[requestedEnvironment],
+      baseUrl: BASE_URLS[requestedEnvironment],
+      streamBaseUrl: STREAM_BASE_URLS[requestedEnvironment],
     accountId,
     apiToken,
     nas100Instrument,

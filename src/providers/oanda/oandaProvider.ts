@@ -88,4 +88,9 @@ export class OandaProvider {
   public getDailyCandles(instrument: string, count = 250): Promise<OandaDailyCandleResult> {
     return this.getCandles(instrument, 'D', count);
   }
+
+  public openPricingStream(instrument: string, signal: AbortSignal): Promise<Response> {
+    if (!instrument.trim()) throw new Error('An explicit OANDA instrument is required.');
+    return this.client.getStream(`/v3/accounts/${encodeURIComponent(this.configuration.accountId)}/pricing/stream`, { instruments: instrument }, signal);
+  }
 }

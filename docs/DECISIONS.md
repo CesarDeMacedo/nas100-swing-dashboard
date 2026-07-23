@@ -99,3 +99,6 @@ Safety enforcement converts structurally valid but unsafe BUY/SELL input to WAIT
 - Select macro and event-risk data sources for the first live release.
 - Define outcome labels and methodology for historical setup evaluation/backtesting.
 - Select Windows notification adapter and packaging technology after proof-of-concept evidence.
+# Current product boundary
+
+The implementation remains analysis-only and local-first. OANDA is read-only with server-side credentials; there is no browser-to-OANDA connection or trade execution. H4 and Daily inputs are separate, completed-candle safety is authoritative, saved OANDA reports are immutable, and Chart Preview is on-demand only. The fixture scheduler remains the default; OANDA scheduling is opt-in. Cross-market/event-risk feeds are unavailable, and live OANDA observation remains experimental pending lifecycle tests.

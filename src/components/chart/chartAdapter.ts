@@ -36,6 +36,12 @@ export type PriceLineModel = {
   lineWidth: 1 | 2;
 };
 
+export function selectVisibleSavedLevels(analysis: SafeAnalysis, limit = 3) {
+  const supports = [...analysis.supportZones].filter((zone) => zone.high <= analysis.currentPrice).sort((a, b) => b.high - a.high).slice(0, limit);
+  const resistances = [...analysis.resistanceZones].filter((zone) => zone.low >= analysis.currentPrice).sort((a, b) => a.low - b.low).slice(0, limit);
+  return { supports, resistances, hiddenCount: analysis.supportZones.length + analysis.resistanceZones.length - supports.length - resistances.length };
+}
+
 export const toUtcTimestamp = (timestamp: string) =>
   Math.floor(Date.parse(timestamp) / 1000) as UTCTimestamp;
 

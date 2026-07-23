@@ -31,6 +31,11 @@ describe('OANDA configuration', () => {
     expect(parseOandaConfiguration({ ...environment, OANDA_ENVIRONMENT: 'live' })).toMatchObject({ state: 'configured', environment: 'live', baseUrl: 'https://api-fxtrade.oanda.com' });
   });
 
+  it('selects the matching server-side pricing stream host', () => {
+    expect(parseOandaConfiguration(environment)).toMatchObject({ streamBaseUrl: 'https://stream-fxpractice.oanda.com' });
+    expect(parseOandaConfiguration({ ...environment, OANDA_ENVIRONMENT: 'live' })).toMatchObject({ streamBaseUrl: 'https://stream-fxtrade.oanda.com' });
+  });
+
   it('is safely unconfigured for missing credentials and never exposes the token in status or errors', () => {
     const missing = parseOandaConfiguration({ OANDA_API_TOKEN: 'secret-token' });
     const invalid = parseOandaConfiguration({ ...environment, OANDA_ENVIRONMENT: 'unsupported' });
@@ -85,6 +90,15 @@ describe('OANDA read-only provider', () => {
     expect(url.searchParams.get('granularity')).toBe('D');
     expect(url.searchParams.get('price')).toBe('M');
     expect(result).toMatchObject({ timeframe: 'D', candles: [{ timeframe: 'D', isClosed: true }] });
+  });
+
+  it('opens the configured server-side pricing stream with GET and no exposed payload', async () => {
+    let requestUrl = '';
+    let requestInit: RequestInit | undefined;
+    const fetcher: typeof fetch = async (input, init) => { requestUrl = input instanceof URL ? input.toString() : String(input); requestInit = init; return new Response(new ReadableStream(), { status: 200 }); };
+    await new OandaProvider(configured(), fetcher).openPricingStream('NAS100_USD', new AbortController().signal);
+    expect(requestUrl).toBe('https://stream-fxpractice.oanda.com/v3/accounts/101-001-1234567-001/pricing/stream?instruments=NAS100_USD');
+    expect(requestInit).toMatchObject({ method: 'GET', headers: expect.objectContaining({ Accept: 'application/json' }) });
   });
 
   it('rejects invalid OHLC and invalid candle counts safely', async () => {

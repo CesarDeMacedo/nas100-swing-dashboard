@@ -1,5 +1,14 @@
 # MVP Checklist
 
+## Current delivered workflow
+
+- [x] Manual read-only OANDA H4/Daily analysis with completed-candle safety and immutable saved snapshots.
+- [x] Eligible saved OANDA reports open in the main dashboard; refresh defaults to mock data.
+- [x] On-demand read-only OANDA H4 Chart Preview.
+- [x] Chart zoom, pan, price-scale adjustment, pinch zoom, double-click reset, and explicit Reset view.
+- [x] Optional OANDA scheduler mode remains explicitly opt-in; fixture remains the default.
+- [ ] Experimental live OANDA observation lifecycle is not yet fully validated.
+
 ## Foundation
 
 - [x] Phase 0: Browser-first TypeScript workspace and React/Vite app are created after approval; the deferred Node local service is intentionally not created.

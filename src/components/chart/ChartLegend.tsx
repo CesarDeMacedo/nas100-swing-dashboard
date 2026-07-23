@@ -5,14 +5,16 @@ type ChartLegendProps = {
   dataset: CandleDataset;
   latestCandle: Candle;
   analysisCurrentPrice: number;
+  hiddenLevelCount?: number;
 };
 
-export function ChartLegend({ dataset, latestCandle, analysisCurrentPrice }: ChartLegendProps) {
+export function ChartLegend({ dataset, latestCandle, analysisCurrentPrice, hiddenLevelCount = 0 }: ChartLegendProps) {
   const priceMatches = Math.abs(analysisCurrentPrice - latestCandle.close) < 0.05;
 
   return (
     <div className="chart-legend" aria-label="Chart data summary">
-      <span>{dataset.candles.length} synthetic H4 candles</span>
+      <span>{dataset.candles.length} {dataset.isSynthetic ? 'synthetic' : 'saved OANDA'} H4 candles</span>
+      {hiddenLevelCount > 0 ? <span data-testid="hidden-level-count">+ {hiddenLevelCount} additional saved levels</span> : null}
       <span>{formatTorontoTime(dataset.candles[0]?.time ?? latestCandle.time)}</span>
       <span>to {formatTorontoTime(latestCandle.time)}</span>
       <span>

@@ -10,6 +10,8 @@ type ChartHeaderProps = {
   freshness: DataFreshness;
   latestCandle?: Candle;
   changePercent: number;
+  onResetView?: () => void;
+  savedMetadata?: { provenance: string; sourceTime: string | null; latestPrice: number | null; liveStatus: string | null };
 };
 
 export function ChartHeader({
@@ -19,6 +21,8 @@ export function ChartHeader({
   freshness,
   latestCandle,
   changePercent,
+  onResetView,
+  savedMetadata,
 }: ChartHeaderProps) {
   return (
     <header className="chart-header">
@@ -27,6 +31,7 @@ export function ChartHeader({
         <span>{timeframe}</span>
         <span>{provider.toUpperCase()}</span>
       </div>
+      {savedMetadata ? <div className="chart-header__saved-meta" role="status"><strong>{savedMetadata.provenance} — SAVED ANALYSIS</strong><span>Saved H4: {savedMetadata.sourceTime ?? 'Unavailable'}</span><span>OPEN H4 — NOT USED FOR DECISIONS{savedMetadata.liveStatus ? ` · ${savedMetadata.liveStatus.toUpperCase()}` : ''}</span>{savedMetadata.latestPrice !== null ? <span>Latest observed midpoint: {savedMetadata.latestPrice.toLocaleString()}</span> : null}</div> : null}
       <div className="chart-header__ohlc" aria-label="Latest candle OHLC">
         {latestCandle ? (
           <>
@@ -42,7 +47,7 @@ export function ChartHeader({
           {formatPercent(changePercent)}
         </strong>
       </div>
-      <DataFreshnessBadge freshness={freshness} provider={provider} />
+      <div className="chart-header__controls"><DataFreshnessBadge freshness={freshness} provider={provider} />{onResetView ? <button type="button" onClick={onResetView}>Reset view</button> : null}</div>
     </header>
   );
 }

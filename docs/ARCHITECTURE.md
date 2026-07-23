@@ -1,5 +1,11 @@
 # Architecture
 
+## Current implementation status
+
+The application is local-first and analysis-only. React/Vite/TypeScript renders a mock-default dashboard while the Node service owns read-only OANDA access and SQLite immutable reports. OANDA credentials remain server-side. Manual OANDA analysis uses separate completed H4 and Daily inputs: Daily is for Daily Regime, H4 is for structure and decisions. Saved reports include non-sensitive immutable display snapshots and can be opened from Analysis History. Chart Preview is on-demand and read-only. The scheduler is in-process, defaults to fixture mode, and OANDA mode is explicit opt-in. Cross-market and event-risk feeds are unavailable. The browser never connects to OANDA.
+
+The candlestick chart supports zoom, horizontal pan, price-scale adjustment, pinch zoom, double-click scale reset, and explicit Reset view. Its instance is stable for a chart identity; live/overlay updates update the series without fitting or replacing the user viewport. Experimental live observation is not approved as reliable real-time; lifecycle coverage for subscribers, reconnect, rollover, and saved-report invariance remains incomplete.
+
 ## System overview
 
 NAS100 Swing Intelligence Dashboard will be a local-first, read-only desktop-oriented web application. React renders the dashboard and report from one validated `AnalysisReport`. A Node.js local service owns data acquisition, completed-candle checks, deterministic calculations, report assembly, scheduling, persistence, notifications, and exports. It must contain no broker credentials, order APIs, order simulation, or trade-execution code.

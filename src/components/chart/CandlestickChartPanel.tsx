@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 
 import type { SafeAnalysis } from '../../domain/analysis';
 import type { DashboardState } from '../../application/buildDashboardState';
@@ -9,12 +9,13 @@ import { ChartHeader } from './ChartHeader';
 import { ChartLegend } from './ChartLegend';
 import { ChartStatusOverlay } from './ChartStatusOverlay';
 import { FinancialChart } from './FinancialChart';
-import { mapPriceLines, mapPriceZones, type ChartPalette } from './chartAdapter';
+import { mapPriceLines, mapPriceZones, selectVisibleSavedLevels, type ChartPalette } from './chartAdapter';
 
 type CandlestickChartPanelProps = {
   analysis: SafeAnalysis;
   candleResult: CandleDatasetParseResult;
   dashboardState?: DashboardState;
+  savedMetadata?: { provenance: string; sourceTime: string | null; latestPrice: number | null; liveStatus: string | null };
 };
 
 const chartPalette: ChartPalette = {
@@ -31,11 +32,14 @@ function ValidCandlestickChart({
   analysis,
   dataset,
   dashboardState,
+  savedMetadata,
 }: {
   analysis: SafeAnalysis;
   dataset: CandleDataset;
   dashboardState?: DashboardState;
+  savedMetadata?: { provenance: string; sourceTime: string | null; latestPrice: number | null; liveStatus: string | null };
 }) {
+  const [resetKey, setResetKey] = useState(0);
   const chartAnalysis = dashboardState
     ? ({
         ...analysis,
@@ -46,11 +50,17 @@ function ValidCandlestickChart({
         targets: dashboardState.targets,
       } as SafeAnalysis)
     : analysis;
+  const isSavedOanda = !dataset.isSynthetic && analysis.dataProvider === 'OANDA v20';
+  const selectedLevels = isSavedOanda ? selectVisibleSavedLevels(chartAnalysis) : { supports: chartAnalysis.supportZones, resistances: chartAnalysis.resistanceZones, hiddenCount: 0 };
+  const visibleSupports = selectedLevels.supports;
+  const visibleResistances = selectedLevels.resistances;
+  const visibleAnalysis = { ...chartAnalysis, supportZones: visibleSupports, resistanceZones: visibleResistances };
+  const hiddenLevelCount = selectedLevels.hiddenCount;
   const latestCandle = dataset.candles.at(-1);
-  const zones = useMemo(() => mapPriceZones(chartAnalysis, chartPalette), [chartAnalysis]);
+  const zones = useMemo(() => mapPriceZones(visibleAnalysis, chartPalette), [visibleAnalysis]);
   const priceLines = useMemo(
-    () => (latestCandle ? mapPriceLines(chartAnalysis, latestCandle.close, chartPalette) : []),
-    [chartAnalysis, latestCandle],
+    () => (latestCandle ? mapPriceLines(visibleAnalysis, latestCandle.close, chartPalette) : []),
+    [visibleAnalysis, latestCandle],
   );
 
   if (!latestCandle) return null;
@@ -66,13 +76,18 @@ function ValidCandlestickChart({
         freshness={analysis.dataFreshness}
         latestCandle={latestCandle}
         changePercent={analysis.changePercent}
+        onResetView={() => setResetKey((key) => key + 1)}
+        savedMetadata={savedMetadata}
       />
+      <p className="chart-navigation-hint">Scroll to zoom · Drag to pan · Double-click scale to reset</p>
       <div className="chart-stage" data-testid="financial-chart-stage">
         <FinancialChart
           candles={dataset.candles}
           zones={zones}
           priceLines={priceLines}
           accessibleLabel={accessibleLabel}
+          resetKey={resetKey}
+          chartIdentity={dataset.datasetId}
         />
         <ChartDecisionOverlay
           action={chartAnalysis.action}
@@ -85,6 +100,7 @@ function ValidCandlestickChart({
         dataset={dataset}
         latestCandle={latestCandle}
         analysisCurrentPrice={analysis.currentPrice}
+        hiddenLevelCount={hiddenLevelCount}
       />
       <div className="sr-only" aria-label="Chart overlay values">
         {analysis.supportZones.map((zone) => (
@@ -118,7 +134,7 @@ function ValidCandlestickChart({
   );
 }
 
-export function CandlestickChartPanel({ analysis, candleResult, dashboardState }: CandlestickChartPanelProps) {
+export function CandlestickChartPanel({ analysis, candleResult, dashboardState, savedMetadata }: CandlestickChartPanelProps) {
   if (!candleResult.success) {
     return (
       <section className="chart-panel" aria-label={`${analysis.instrument} H4 chart unavailable`}>
@@ -143,6 +159,7 @@ export function CandlestickChartPanel({ analysis, candleResult, dashboardState }
       analysis={analysis}
       dataset={candleResult.dataset}
       dashboardState={dashboardState}
+      savedMetadata={savedMetadata}
     />
   );
 }
