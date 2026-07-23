@@ -9,9 +9,12 @@ type DashboardHeaderProps = Pick<Analysis, 'displayName' | 'instrument' | 'timef
   manualRunResult?: ManualRunResult | null;
   onManualRun?: () => void;
   onOpenHistory?: () => void;
+  savedOandaProvenance?: string | null;
+  savedSourceCandleTime?: string | null;
+  onReturnToMock?: () => void;
 };
 
-export function DashboardHeader({ displayName, instrument, timeframe, serviceAvailability, manualRunState, manualRunResult, onManualRun, onOpenHistory }: DashboardHeaderProps) {
+export function DashboardHeader({ displayName, instrument, timeframe, serviceAvailability, manualRunState, manualRunResult, onManualRun, onOpenHistory, savedOandaProvenance, savedSourceCandleTime, onReturnToMock }: DashboardHeaderProps) {
   const titleTimeframe = formatTimeframeLabel(timeframe);
 
   return (
@@ -26,6 +29,7 @@ export function DashboardHeader({ displayName, instrument, timeframe, serviceAva
         <span aria-hidden="true">·</span> {timeframe}
       </p>
       </div>
+      {savedOandaProvenance ? <div role="status"><strong>{savedOandaProvenance} — SAVED ANALYSIS</strong><small>Source H4: {savedSourceCandleTime ?? 'Unavailable'}</small>{onReturnToMock ? <button type="button" onClick={onReturnToMock}>Return to mock dashboard</button> : null}</div> : null}
       {serviceAvailability && manualRunState && onManualRun ? (
         <LocalServiceControl availability={serviceAvailability} runState={manualRunState} result={manualRunResult ?? null} onRun={onManualRun} onOpenHistory={onOpenHistory} />
       ) : null}

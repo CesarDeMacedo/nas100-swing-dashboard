@@ -9,7 +9,7 @@ import { parseCandleDataset } from './domain/candles';
 import { buildDashboardState } from './application/buildDashboardState';
 import { currentCandleDatasetSource } from './domain/fixtures';
 import { useDashboardStore } from './store/dashboardStore';
-import { localAnalysisService, type HistoryResult, type LocalAnalysisServiceClient, type ManualRunResult, type RunDetailResult, type ServiceAvailability } from './serviceClient/localAnalysisService';
+import { localAnalysisService, type HistoryResult, type LocalAnalysisServiceClient, type ManualRunResult, type RunDetailResult, type SavedOandaDisplaySnapshot, type ServiceAvailability } from './serviceClient/localAnalysisService';
 
 type AppProps = {
   analysisSource?: unknown;
@@ -38,6 +38,11 @@ export default function App({
   const [history, setHistory] = useState<HistoryResult | { kind: 'loading' } | null>(null);
   const [historyDetail, setHistoryDetail] = useState<RunDetailResult | { kind: 'loading' } | null>(null);
   const [selectedHistoryRunKey, setSelectedHistoryRunKey] = useState<string | null>(null);
+  const [savedOandaSnapshot, setSavedOandaSnapshot] = useState<SavedOandaDisplaySnapshot | null>(null);
+  const savedAnalysisResult = useMemo(() => savedOandaSnapshot ? parseAnalysis(savedOandaSnapshot.analysis) : null, [savedOandaSnapshot]);
+  const savedCandleResult = useMemo(() => savedOandaSnapshot ? parseCandleDataset({ schemaVersion: '1.0.0', datasetId: `saved-oanda:${savedOandaSnapshot.instrument}:${savedOandaSnapshot.h4SourceCandleTime ?? 'unavailable'}`, description: 'Saved immutable OANDA H4 analysis snapshot.', isSynthetic: false, timezone: 'America/Toronto', instrument: savedOandaSnapshot.instrument, timeframe: 'H4', candles: savedOandaSnapshot.candles }) : null, [savedOandaSnapshot]);
+  const activeAnalysis = savedAnalysisResult?.success ? savedAnalysisResult.analysis : dashboardAnalysis;
+  const activeCandleResult = savedCandleResult?.success ? savedCandleResult : candleResult;
 
   useEffect(() => {
     if (result.success) {
@@ -82,17 +87,25 @@ export default function App({
     setHistoryDetail(await serviceClient.getRunByKey(runKey));
   };
 
+  const viewSavedOandaAnalysis = (snapshot: SavedOandaDisplaySnapshot) => {
+    const analysis = parseAnalysis(snapshot.analysis);
+    const candles = parseCandleDataset({ schemaVersion: '1.0.0', datasetId: `saved-oanda:${snapshot.instrument}:${snapshot.h4SourceCandleTime ?? 'unavailable'}`, description: 'Saved immutable OANDA H4 analysis snapshot.', isSynthetic: false, timezone: 'America/Toronto', instrument: snapshot.instrument, timeframe: 'H4', candles: snapshot.candles });
+    if (!analysis.success || !candles.success) return;
+    setSavedOandaSnapshot(snapshot);
+    setHistoryOpen(false);
+  };
+
   return (
     <AppShell>
       {loading ? <LoadingState /> : null}
       {!loading && !result.success ? (
         <ErrorState detail="The local analysis object failed validation. The dashboard has been withheld." />
       ) : null}
-      {!loading && dashboardAnalysis ? (
+      {!loading && activeAnalysis ? (
         <Dashboard
-          analysis={dashboardAnalysis}
-          candleResult={candleResult}
-          dashboardState={useCalculatedDashboardState ? (dashboardState ?? undefined) : undefined}
+          analysis={activeAnalysis}
+          candleResult={activeCandleResult}
+          dashboardState={!savedOandaSnapshot && useCalculatedDashboardState ? (dashboardState ?? undefined) : undefined}
           serviceAvailability={serviceAvailability}
           manualRunState={manualRunState}
           manualRunResult={manualRunResult}
@@ -105,6 +118,10 @@ export default function App({
           onCloseHistory={() => setHistoryOpen(false)}
           onRefreshHistory={() => void loadHistory()}
           onSelectHistoryRun={selectHistoryRun}
+          onViewHistoryInDashboard={viewSavedOandaAnalysis}
+          savedOandaProvenance={savedOandaSnapshot ? `OANDA ${savedOandaSnapshot.environment.toUpperCase()}` : null}
+          savedSourceCandleTime={savedOandaSnapshot?.h4SourceCandleTime ?? null}
+          onReturnToMock={savedOandaSnapshot ? () => setSavedOandaSnapshot(null) : undefined}
         />
       ) : null}
     </AppShell>

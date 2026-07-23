@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 
-import type { AnalysisHistoryItem, HistoryResult, ImmutableReportDetail, RunDetailResult } from '../serviceClient/localAnalysisService';
+import type { AnalysisHistoryItem, HistoryResult, ImmutableReportDetail, RunDetailResult, SavedOandaDisplaySnapshot } from '../serviceClient/localAnalysisService';
 
 type AnalysisHistoryPanelProps = {
   open: boolean;
@@ -10,26 +10,29 @@ type AnalysisHistoryPanelProps = {
   onClose: () => void;
   onRefresh: () => void;
   onSelect: (runKey: string) => void;
+  onViewInDashboard?: (snapshot: SavedOandaDisplaySnapshot) => void;
 };
 
 const display = (value: number | null, unavailable = 'Not available') => value === null ? unavailable : value.toFixed(2);
 const targets = (values: number[]) => values.length ? values.map((value) => value.toFixed(2)).join(', ') : 'Not calculated';
+const actionLabel = (value: string) => value.replaceAll('_', ' ');
 
 function HistoryRow({ item, selected, onSelect }: { item: AnalysisHistoryItem; selected: boolean; onSelect: () => void }) {
   const report = item.report;
   return (
     <button className={`history-row${selected ? ' history-row--selected' : ''}`} type="button" onClick={onSelect}>
-      <strong>{report?.action ?? item.run.status}</strong>
+      <strong>{actionLabel(report?.action ?? item.run.status)}</strong>
       <span>{report?.direction ?? 'No direction'} | Score {report?.score ?? 'Not available'} | Grade {report?.grade ?? 'Not available'}</span>
       <small>{item.run.completedAt} | {report?.sourceCandleTime ?? 'Source candle unavailable'} | {item.run.status} | {report?.isActionable ? 'Actionable analysis' : 'Non-actionable analysis'}</small>
     </button>
   );
 }
 
-function Detail({ report }: { report: ImmutableReportDetail }) {
+function Detail({ report, onViewInDashboard }: { report: ImmutableReportDetail; onViewInDashboard?: (snapshot: SavedOandaDisplaySnapshot) => void }) {
+  const snapshot = report.displaySnapshot;
   return (
     <section className="history-detail" aria-label="Stored analysis detail">
-      <strong>{report.action} | Score {report.score ?? 'Not available'} | Grade {report.grade ?? 'Not available'}</strong>
+      <strong>{actionLabel(report.action)} | Score {report.score ?? 'Not available'} | Grade {report.grade ?? 'Not available'}</strong>
       <p>{report.primaryReason}</p>
       <dl>
         <div><dt>Entry trigger</dt><dd>{report.entryTrigger ?? 'Not available'}</dd></div>
@@ -37,11 +40,13 @@ function Detail({ report }: { report: ImmutableReportDetail }) {
         <div><dt>Targets</dt><dd>{targets(report.targets)}</dd></div>
         <div><dt>R:R</dt><dd>{display(report.estimatedRewardRisk)}</dd></div>
       </dl>
+      {snapshot && onViewInDashboard ? <button type="button" onClick={() => onViewInDashboard(snapshot)}>View in dashboard</button> : null}
+      {!snapshot ? <p>This record predates dashboard snapshots.</p> : null}
     </section>
   );
 }
 
-export function AnalysisHistoryPanel({ open, history, detail, selectedRunKey, onClose, onRefresh, onSelect }: AnalysisHistoryPanelProps) {
+export function AnalysisHistoryPanel({ open, history, detail, selectedRunKey, onClose, onRefresh, onSelect, onViewInDashboard }: AnalysisHistoryPanelProps) {
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (event: KeyboardEvent) => {
@@ -66,7 +71,7 @@ export function AnalysisHistoryPanel({ open, history, detail, selectedRunKey, on
           {history?.kind === 'succeeded' ? <div className="history-list">{history.runs.map((item) => <HistoryRow key={item.run.runKey} item={item} selected={selectedRunKey === item.run.runKey} onSelect={() => onSelect(item.run.runKey)} />)}</div> : null}
           {detail?.kind === 'loading' ? <p>Loading stored analysis...</p> : null}
           {detail?.kind === 'failed' || detail?.kind === 'malformed_response' ? <p>{detail.message}</p> : null}
-          {detail?.kind === 'succeeded' ? <Detail report={detail.report} /> : null}
+          {detail?.kind === 'succeeded' ? <Detail report={detail.report} onViewInDashboard={onViewInDashboard} /> : null}
         </div>
       </aside>
     </div>

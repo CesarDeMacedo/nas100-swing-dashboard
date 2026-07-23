@@ -9,7 +9,7 @@ import { MetricsFooter } from './MetricsFooter';
 import { PrimaryActionBanner } from './PrimaryActionBanner';
 import { SetupSummary } from './SetupSummary';
 import { AnalysisHistoryPanel } from './AnalysisHistoryPanel';
-import type { HistoryResult, RunDetailResult } from '../serviceClient/localAnalysisService';
+import type { HistoryResult, RunDetailResult, SavedOandaDisplaySnapshot } from '../serviceClient/localAnalysisService';
 
 type DashboardProps = {
   analysis: SafeAnalysis;
@@ -27,9 +27,13 @@ type DashboardProps = {
   onCloseHistory?: () => void;
   onRefreshHistory?: () => void;
   onSelectHistoryRun?: (runKey: string) => void;
+  onViewHistoryInDashboard?: (snapshot: SavedOandaDisplaySnapshot) => void;
+  savedOandaProvenance?: string | null;
+  savedSourceCandleTime?: string | null;
+  onReturnToMock?: () => void;
 };
 
-export function Dashboard({ analysis, candleResult, dashboardState, serviceAvailability, manualRunState, manualRunResult, onManualRun, historyOpen = false, history, historyDetail, selectedHistoryRunKey = null, onOpenHistory, onCloseHistory, onRefreshHistory, onSelectHistoryRun }: DashboardProps) {
+export function Dashboard({ analysis, candleResult, dashboardState, serviceAvailability, manualRunState, manualRunResult, onManualRun, historyOpen = false, history, historyDetail, selectedHistoryRunKey = null, onOpenHistory, onCloseHistory, onRefreshHistory, onSelectHistoryRun, onViewHistoryInDashboard, savedOandaProvenance, savedSourceCandleTime, onReturnToMock }: DashboardProps) {
   const state = dashboardState;
 
   return (
@@ -44,6 +48,9 @@ export function Dashboard({ analysis, candleResult, dashboardState, serviceAvail
           manualRunResult={manualRunResult}
           onManualRun={onManualRun}
           onOpenHistory={onOpenHistory}
+          savedOandaProvenance={savedOandaProvenance}
+          savedSourceCandleTime={savedSourceCandleTime}
+          onReturnToMock={onReturnToMock}
         />
         <PrimaryActionBanner
           action={state?.action ?? analysis.action}
@@ -70,7 +77,7 @@ export function Dashboard({ analysis, candleResult, dashboardState, serviceAvail
         <AnalysisSidebar analysis={analysis} dashboardState={state} />
       </div>
       <MetricsFooter analysis={analysis} dashboardState={state} />
-      {onCloseHistory && onRefreshHistory && onSelectHistoryRun ? <AnalysisHistoryPanel open={historyOpen} history={history ?? null} detail={historyDetail ?? null} selectedRunKey={selectedHistoryRunKey} onClose={onCloseHistory} onRefresh={onRefreshHistory} onSelect={onSelectHistoryRun} /> : null}
+      {onCloseHistory && onRefreshHistory && onSelectHistoryRun ? <AnalysisHistoryPanel open={historyOpen} history={history ?? null} detail={historyDetail ?? null} selectedRunKey={selectedHistoryRunKey} onClose={onCloseHistory} onRefresh={onRefreshHistory} onSelect={onSelectHistoryRun} onViewInDashboard={onViewHistoryInDashboard} /> : null}
     </div>
   );
 }

@@ -55,7 +55,7 @@ function ValidCandlestickChart({
 
   if (!latestCandle) return null;
 
-  const accessibleLabel = `${analysis.displayName} ${analysis.timeframe} candlestick chart. ${dataset.candles.length} synthetic candles. Latest candle ${latestCandle.isClosed ? 'completed' : 'open'} with open ${latestCandle.open}, high ${latestCandle.high}, low ${latestCandle.low}, and close ${latestCandle.close}.`;
+  const accessibleLabel = `${analysis.displayName} ${analysis.timeframe} candlestick chart. ${dataset.candles.length} ${dataset.isSynthetic ? 'synthetic' : 'saved OANDA'} candles. Latest candle ${latestCandle.isClosed ? 'completed' : 'open'} with open ${latestCandle.open}, high ${latestCandle.high}, low ${latestCandle.low}, and close ${latestCandle.close}.`;
 
   return (
     <section className="chart-panel" aria-label={`${analysis.instrument} H4 candlestick chart`}>

@@ -108,6 +108,9 @@ describe('manual OANDA analysis run', () => {
     expect(['BUY', 'SELL']).not.toContain(first.report?.action);
     expect(first.report?.entryPrice).toBeNull();
     expect(first.report?.targets).toEqual([]);
+    expect(first.report?.displaySnapshot).toMatchObject({ provider: 'oanda-v20', environment: 'practice', instrument: 'NAS100_USD', timeframe: 'H4', h4SourceCandleTime: '2026-07-21T20:00:00.000Z' });
+    expect(first.report?.displaySnapshot?.candles).toHaveLength(2);
+    expect(JSON.stringify(first.report?.displaySnapshot)).not.toContain('99999');
     expect(repeated).toMatchObject({ outcome: 'already_exists', run: { id: first.run.id } });
     expect(next).toMatchObject({ outcome: 'created' });
     expect(next.run.runKey).not.toBe(first.run.runKey);

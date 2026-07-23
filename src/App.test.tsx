@@ -98,8 +98,9 @@ describe('dashboard rendering', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Open analysis history' }));
     expect(await screen.findByRole('dialog', { name: 'Analysis history' })).toBeVisible();
-    expect(await screen.findByText('WAIT_FOR_PULLBACK')).toBeVisible();
-    fireEvent.click(screen.getByRole('button', { name: /WAIT_FOR_PULLBACK/ }));
+    const historyDialog = await screen.findByRole('dialog', { name: 'Analysis history' });
+    expect(within(historyDialog).getByText('WAIT FOR PULLBACK')).toBeVisible();
+    fireEvent.click(within(historyDialog).getByRole('button', { name: /WAIT FOR PULLBACK/ }));
     expect(await screen.findByText('Pullback location is pending.')).toBeVisible();
     expect(screen.getAllByText('Not calculated').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Not available').length).toBeGreaterThan(0);
@@ -108,6 +109,39 @@ describe('dashboard rendering', () => {
     expect(listRecentRuns).toHaveBeenCalledTimes(2);
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(screen.queryByRole('dialog', { name: 'Analysis history' })).not.toBeInTheDocument();
+  });
+
+  it('opens a saved OANDA snapshot in the dashboard and returns to mock data without provider calls', async () => {
+    const savedAnalysis = structuredClone(actionFixtures.WAIT) as Record<string, unknown>;
+    Object.assign(savedAnalysis, {
+      id: 'saved-oanda-analysis', instrument: 'NAS100_USD', displayName: 'NAS100_USD', dataProvider: 'OANDA v20', currentPrice: 30123,
+      supportZones: [{ id: 'saved-support', type: 'SUPPORT', low: 30000, high: 30020, label: 'Saved support', source: 'OANDA H4', confidence: 70, lockedByUser: false }],
+      resistanceZones: [{ id: 'saved-resistance', type: 'RESISTANCE', low: 30200, high: 30220, label: 'Saved resistance', source: 'OANDA H4', confidence: 70, lockedByUser: false }],
+      preferredEntryZone: { id: 'saved-entry', type: 'ENTRY', low: 30000, high: 30020, label: 'Saved entry', source: 'OANDA H4', confidence: 70, lockedByUser: false },
+    });
+    const snapshot = {
+      provider: 'oanda-v20' as const, environment: 'practice' as const, instrument: 'NAS100_USD', timeframe: 'H4' as const,
+      candles: [{ time: '2026-07-22T00:00:00.000Z', open: 30100, high: 30140, low: 30080, close: 30123, isClosed: true, instrument: 'NAS100_USD', timeframe: 'H4', source: 'oanda-v20' }],
+      analysis: savedAnalysis, h4SourceCandleTime: '2026-07-22T00:00:00.000Z', dailySourceCandleTime: null, warnings: ['Saved only.'],
+    };
+    const detail: RunDetailResult = { kind: 'succeeded', item: historyItem, report: { ...historyDetail.report, displaySnapshot: snapshot } };
+    const listRecentRuns = async () => ({ kind: 'succeeded' as const, runs: [historyItem] });
+    const getRunByKey = async () => detail;
+    render(<App serviceClient={client(async () => ({ kind: 'available' }), async () => run, listRecentRuns, getRunByKey)} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Open analysis history' }));
+    const historyDialog = await screen.findByRole('dialog', { name: 'Analysis history' });
+    fireEvent.click(within(historyDialog).getByRole('button', { name: /WAIT FOR PULLBACK/ }));
+    fireEvent.click(await within(historyDialog).findByRole('button', { name: 'View in dashboard' }));
+
+    expect(screen.queryByRole('dialog', { name: 'Analysis history' })).not.toBeInTheDocument();
+    expect(screen.getByText('OANDA PRACTICE — SAVED ANALYSIS')).toBeVisible();
+    expect(screen.getByTestId('current-price-marker')).toHaveTextContent('30,123');
+    expect(screen.getAllByTestId('support-zone')).toHaveLength(1);
+    expect(screen.getByText(/saved OANDA candles/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Return to mock dashboard' }));
+    expect(screen.queryByText('OANDA PRACTICE — SAVED ANALYSIS')).not.toBeInTheDocument();
+    expect(screen.getByTestId('current-price-marker')).toHaveTextContent('29,082');
   });
 
   it('shows empty and failed history states without execution wording', async () => {

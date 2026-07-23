@@ -1,5 +1,6 @@
 import type { DashboardState } from './buildDashboardState';
-import type { PriceZone } from '../schemas/analysis';
+import type { AnalysisReport, PriceZone } from '../schemas/analysis';
+import type { Candle } from '../schemas/candles';
 
 export const SWING_REPORT_VERSION = '1.0.0';
 
@@ -15,6 +16,7 @@ export type SwingReport = {
   preferredEntryZone?: PriceZone | null;
   invalidationCandidate?: number | null;
   levelWarnings?: string[];
+  displaySnapshot?: OandaDisplaySnapshot;
   dataFreshness: DashboardState['dataFreshness'];
   regime: string;
   h4Structure: string;
@@ -40,6 +42,18 @@ export type SwingReport = {
   whatToDoNext: string[];
   marketContext: string[];
   dataHealth: DashboardState['dataHealth'];
+};
+
+export type OandaDisplaySnapshot = {
+  provider: 'oanda-v20';
+  environment: 'practice' | 'live';
+  instrument: string;
+  timeframe: 'H4';
+  candles: Candle[];
+  analysis: AnalysisReport;
+  h4SourceCandleTime: string | null;
+  dailySourceCandleTime: string | null;
+  warnings: string[];
 };
 
 export type SwingReportOutput = {

@@ -233,6 +233,8 @@ Manual OANDA analysis is implemented as a separate `POST /runs/manual-oanda` pat
 
 New manual OANDA reports derive deterministic support, resistance, preferred-entry, and informational invalidation levels from completed H4 confirmed swings with centralized ATR buffers. Historical reports are not changed. Dashboard selection of an OANDA report remains deferred.
 
+Saved OANDA reports with a non-sensitive display snapshot can now be opened from History in the existing dashboard layout for the current browser session. This is historical review only: mock data remains the refresh default, and neither the scheduler nor browser starts OANDA loading automatically.
+
 - Objective: replace mock provider with a licensed live provider through adapters.
 - Scope: credentials, symbol mapping, OHLC, US500/US30 primary confirmation, Russell 2000 complementary confirmation, data health, and provider status.
 - Likely files: `apps/service/src/providers/`, settings, secure local config docs.

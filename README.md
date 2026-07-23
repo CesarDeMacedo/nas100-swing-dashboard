@@ -46,6 +46,8 @@ OANDA data is not connected to the dashboard or scheduler. Manual OANDA reports 
 
 New OANDA reports calculate deterministic completed-H4 support, resistance, preferred-entry, and informational invalidation levels with ATR-based buffers. Existing local reports remain immutable. Selecting an OANDA report in the dashboard is a later milestone.
 
+Saved OANDA reports that include a display snapshot can be reviewed in the dashboard as historical saved analysis, not live streaming. Mock data remains the default after refresh; the scheduler and automatic OANDA loading remain unchanged.
+
 ## Local Synthetic Scheduler
 
 While `npm run service` is running, the in-process scheduler evaluates `America/Toronto` time every 15 seconds and runs only these one-minute post-close slots: Monday-Friday at 1:01 p.m., and Sunday-Friday at 9:01 p.m. It skips Saturday and the Sunday 1:01 p.m. slot.

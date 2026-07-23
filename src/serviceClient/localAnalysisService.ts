@@ -57,6 +57,19 @@ export type ImmutableReportDetail = {
   estimatedRewardRisk: number | null;
   sourceCandleTime: string | null;
   isActionable: boolean;
+  displaySnapshot?: SavedOandaDisplaySnapshot;
+};
+
+export type SavedOandaDisplaySnapshot = {
+  provider: 'oanda-v20';
+  environment: 'practice' | 'live';
+  instrument: string;
+  timeframe: 'H4';
+  candles: unknown;
+  analysis: unknown;
+  h4SourceCandleTime: string | null;
+  dailySourceCandleTime: string | null;
+  warnings: string[];
 };
 
 export type HistoryResult =
@@ -105,10 +118,16 @@ const isPersistedRun = (value: unknown): value is PersistedRun => {
   return typeof run.id === 'string' && typeof run.runKey === 'string' && typeof run.completedAt === 'string' && typeof run.status === 'string' && typeof run.source === 'string' && typeof run.persistedAt === 'string' && (typeof run.reportId === 'string' || run.reportId === null);
 };
 
+const isSavedOandaDisplaySnapshot = (value: unknown): value is SavedOandaDisplaySnapshot => {
+  if (!value || typeof value !== 'object') return false;
+  const snapshot = value as Record<string, unknown>;
+  return snapshot.provider === 'oanda-v20' && (snapshot.environment === 'practice' || snapshot.environment === 'live') && typeof snapshot.instrument === 'string' && snapshot.timeframe === 'H4' && Array.isArray(snapshot.candles) && snapshot.analysis !== null && typeof snapshot.analysis === 'object' && (typeof snapshot.h4SourceCandleTime === 'string' || snapshot.h4SourceCandleTime === null) && (typeof snapshot.dailySourceCandleTime === 'string' || snapshot.dailySourceCandleTime === null) && Array.isArray(snapshot.warnings) && snapshot.warnings.every((warning) => typeof warning === 'string');
+};
+
 const isImmutableReportDetail = (value: unknown): value is ImmutableReportDetail => {
   if (!value || typeof value !== 'object') return false;
   const report = value as Record<string, unknown>;
-  return typeof report.action === 'string' && typeof report.direction === 'string' && (typeof report.score === 'number' || report.score === null) && (typeof report.grade === 'string' || report.grade === null) && typeof report.primaryReason === 'string' && (typeof report.entryTrigger === 'string' || report.entryTrigger === null) && (typeof report.stopPrice === 'number' || report.stopPrice === null) && Array.isArray(report.targets) && report.targets.every((target) => typeof target === 'number') && (typeof report.estimatedRewardRisk === 'number' || report.estimatedRewardRisk === null) && (typeof report.sourceCandleTime === 'string' || report.sourceCandleTime === null) && typeof report.isActionable === 'boolean';
+  return typeof report.action === 'string' && typeof report.direction === 'string' && (typeof report.score === 'number' || report.score === null) && (typeof report.grade === 'string' || report.grade === null) && typeof report.primaryReason === 'string' && (typeof report.entryTrigger === 'string' || report.entryTrigger === null) && (typeof report.stopPrice === 'number' || report.stopPrice === null) && Array.isArray(report.targets) && report.targets.every((target) => typeof target === 'number') && (typeof report.estimatedRewardRisk === 'number' || report.estimatedRewardRisk === null) && (typeof report.sourceCandleTime === 'string' || report.sourceCandleTime === null) && typeof report.isActionable === 'boolean' && (report.displaySnapshot === undefined || isSavedOandaDisplaySnapshot(report.displaySnapshot));
 };
 
 const isAnalysisHistorySummary = (value: unknown): value is AnalysisHistorySummary => {

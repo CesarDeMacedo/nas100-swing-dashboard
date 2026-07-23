@@ -256,7 +256,7 @@ export const runManualOandaAnalysis = (repository: AnalysisRepository, source: O
   try {
     const { analysis, candles, multiTimeframe, technicalContext, marketLevels } = buildOandaMultiTimeframeInputs(source, dailySource, startedAt);
     const { preferredEntryZone: _preferredEntryZone, invalidation: _invalidation, ...analysisWithoutMarketLevels } = analysis;
-    const report = {
+    const baseReport = {
       ...buildSwingReport(safetyConstrainedState(buildDashboardState({ ...analysisWithoutMarketLevels, supportZones: [], resistanceZones: [] }, candles, technicalContext))),
       dailySourceCandleTime: multiTimeframe.dailySourceCandleTime,
       supportZones: analysis.supportZones,
@@ -264,6 +264,32 @@ export const runManualOandaAnalysis = (repository: AnalysisRepository, source: O
       preferredEntryZone: analysis.preferredEntryZone ?? null,
       invalidationCandidate: analysis.invalidation ?? null,
       levelWarnings: marketLevels.warnings,
+    };
+    const displayAnalysis = AnalysisReportSchema.parse({
+      ...analysis,
+      action: baseReport.action,
+      score: baseReport.score ?? analysis.score,
+      grade: baseReport.grade ?? analysis.grade,
+      reason: baseReport.primaryReason,
+      supportZones: analysis.supportZones,
+      resistanceZones: analysis.resistanceZones,
+      ...(analysis.preferredEntryZone ? { preferredEntryZone: analysis.preferredEntryZone } : {}),
+      ...(analysis.invalidation ? { invalidation: analysis.invalidation } : {}),
+      setupScoreBreakdown: { ...analysis.setupScoreBreakdown, total: baseReport.score ?? analysis.score },
+    });
+    const report = {
+      ...baseReport,
+      displaySnapshot: {
+        provider: 'oanda-v20' as const,
+        environment: source.environment,
+        instrument: source.instrument,
+        timeframe: 'H4' as const,
+        candles: candles.candles,
+        analysis: displayAnalysis,
+        h4SourceCandleTime: multiTimeframe.h4SourceCandleTime,
+        dailySourceCandleTime: multiTimeframe.dailySourceCandleTime,
+        warnings: [...baseReport.warnings, ...marketLevels.warnings],
+      },
     };
     const runKey = oandaRunKey(report, analysis.strategyVersion);
     const existing = repository.getRunByKey(runKey);

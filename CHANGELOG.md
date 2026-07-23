@@ -1,5 +1,10 @@
 # Changelog
 
+## Saved OANDA Dashboard Review
+
+- Added session-only viewing of supported saved OANDA report snapshots from Analysis History in the existing dashboard layout.
+- This is historical saved analysis, not streaming; mock remains the refresh default and scheduler behavior is unchanged.
+
 ## Deterministic OANDA Market Levels
 
 - New manual OANDA reports derive immutable completed-H4 swing support, resistance, preferred-entry, and informational invalidation levels with ATR-based buffers.
