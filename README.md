@@ -29,6 +29,19 @@ For local workflow validation, start `npm run service` first, then run `npm run 
 
 The dashboard includes a compact, read-only Analysis history overlay that loads local records only when opened. It requires `npm run service`, does not alter fixture dashboard values, and does not create new analysis runs.
 
+## OANDA Read-Only Provider Foundation
+
+Create an OANDA Practice account in the OANDA portal, generate a personal API token there, and place it only in a local `.env` file based on `.env.example`. Never place tokens in browser settings, source files, logs, or Git.
+
+- `OANDA_ENVIRONMENT=practice` or `live` (defaults to `practice`)
+- `OANDA_ACCOUNT_ID`
+- `OANDA_API_TOKEN`
+- `OANDA_NAS100_INSTRUMENT` is optional until its exact account-supported symbol is verified.
+
+`npm run service` loads the project-root `.env` file when the Node service starts; already-set operating-system environment variables take precedence. Then call `GET http://127.0.0.1:4310/providers/oanda/status` to inspect safe configuration state. `POST /providers/oanda/verify` performs one read-only instrument-list check and returns NAS100/US100 candidates without selecting one. After explicitly setting a verified `OANDA_NAS100_INSTRUMENT`, `GET /providers/oanda/candles?count=250` returns normalized midpoint H4 candles only.
+
+OANDA data is not connected to the dashboard, scheduler, strategy engine, persistence, or trading. The service uses GET-only OANDA requests and has no order, trade, or account-modification capability.
+
 ## Local Synthetic Scheduler
 
 While `npm run service` is running, the in-process scheduler evaluates `America/Toronto` time every 15 seconds and runs only these one-minute post-close slots: Monday-Friday at 1:01 p.m., and Sunday-Friday at 9:01 p.m. It skips Saturday and the Sunday 1:01 p.m. slot.

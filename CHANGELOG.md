@@ -1,5 +1,11 @@
 # Changelog
 
+## OANDA Read-Only Provider Foundation
+
+- Added environment-only OANDA v20 configuration, GET-only account instrument discovery, candidate matching, and normalized midpoint H4 candle retrieval.
+- Added local provider status, verification, and explicit-instrument candle endpoints with no credential exposure.
+- OANDA data remains disconnected from dashboard, scheduler, strategy, SQLite persistence, and any trading capability.
+
 ## Local Synthetic Scheduler
 
 - Added an in-process `America/Toronto` scheduler for the approved Monday-Friday 13:01 and Sunday-Friday 21:01 fixture slots.

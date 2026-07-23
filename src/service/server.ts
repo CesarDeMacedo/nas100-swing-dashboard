@@ -1,6 +1,9 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { resolve } from 'node:path';
 
 import { AnalysisRepository, defaultPersistencePath, type StoredAnalysisRun } from '../persistence/analysisRepository';
+import { oandaConfigurationStatus, parseOandaConfiguration } from '../providers/oanda/config';
+import { OandaProvider, findNas100CandidatesFromInstruments } from '../providers/oanda/oandaProvider';
 import { runSyntheticFixtureAnalysis } from './fixtureRun';
 import { FixtureScheduler, type SchedulerStatus } from './scheduler/fixtureScheduler';
 import { parseSchedulerEnabled } from './scheduler/torontoSchedule';
@@ -9,11 +12,22 @@ export const LOCAL_SERVICE_HOST = '127.0.0.1';
 export const DEFAULT_SERVICE_PORT = 4310;
 const LOCAL_VITE_ORIGINS = new Set(['http://localhost:5173', 'http://127.0.0.1:5173']);
 
+export const loadProjectEnvironmentForServiceCli = (envPath = resolve(process.cwd(), '.env')) => {
+  try {
+    process.loadEnvFile(envPath);
+  } catch (cause) {
+    if (cause instanceof Error && 'code' in cause && cause.code === 'ENOENT') return;
+    throw cause;
+  }
+};
+
 type LocalServiceOptions = {
   databasePath?: string;
   port?: number;
   schedulerEnabled?: boolean;
   schedulerIntervalMs?: number;
+  oandaEnvironment?: NodeJS.ProcessEnv;
+  oandaFetch?: typeof fetch;
 };
 
 type ServiceHealth = {
@@ -67,6 +81,13 @@ const parseLimit = (value: string | null) => {
   return Number.isSafeInteger(limit) && limit >= 1 && limit <= 100 ? limit : null;
 };
 
+const parseOandaCandleCount = (value: string | null) => {
+  if (value === null) return 250;
+  if (!/^\d+$/.test(value)) return null;
+  const count = Number(value);
+  return Number.isSafeInteger(count) && count >= 1 && count <= 5000 ? count : null;
+};
+
 const resolvePort = (value: string | undefined) => {
   if (value === undefined) return DEFAULT_SERVICE_PORT;
   const port = Number(value);
@@ -77,6 +98,8 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
   const databasePath = options.databasePath ?? process.env.NAS100_DASHBOARD_DB_PATH ?? defaultPersistencePath();
   const configuredPort = options.port ?? resolvePort(process.env.NAS100_DASHBOARD_PORT);
   const schedulerEnabled = options.schedulerEnabled ?? parseSchedulerEnabled(process.env.NAS100_DASHBOARD_SCHEDULER_ENABLED);
+  const oandaConfiguration = parseOandaConfiguration(options.oandaEnvironment);
+  const oandaProvider = oandaConfiguration.state === 'configured' ? new OandaProvider(oandaConfiguration, options.oandaFetch) : null;
   let repository: AnalysisRepository | null = null;
   let server: Server | null = null;
   let boundPort = configuredPort;
@@ -99,7 +122,7 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
     scheduler: scheduler.status(),
   });
 
-  const requestHandler = (request: IncomingMessage, response: ServerResponse) => {
+  const requestHandler = async (request: IncomingMessage, response: ServerResponse) => {
     const url = new URL(request.url ?? '/', `http://${LOCAL_SERVICE_HOST}`);
     setCorsHeaders(request, response);
     if (request.method === 'OPTIONS') {
@@ -119,6 +142,52 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
     try {
       if (request.method === 'GET' && url.pathname === '/health') {
         json(response, 200, health());
+        return;
+      }
+
+      if (request.method === 'GET' && url.pathname === '/providers/oanda/status') {
+        json(response, 200, oandaConfigurationStatus(oandaConfiguration));
+        return;
+      }
+
+      if (request.method === 'POST' && url.pathname === '/providers/oanda/verify') {
+        if (!oandaProvider) {
+          const message = oandaConfiguration.state === 'configured' ? 'OANDA provider is not configured.' : oandaConfiguration.message;
+          error(response, 409, oandaConfiguration.state === 'invalid' ? 'OANDA_CONFIGURATION_INVALID' : 'OANDA_UNCONFIGURED', message);
+          return;
+        }
+        try {
+          const instruments = await oandaProvider.getAccountInstruments();
+          const candidates = findNas100CandidatesFromInstruments(instruments);
+          const configuredInstrument = oandaConfiguration.nas100Instrument;
+          json(response, 200, {
+            providerAvailable: true,
+            environment: oandaConfiguration.environment,
+            candidates,
+            configuredInstrument: configuredInstrument !== null,
+            configuredInstrumentSupported: configuredInstrument !== null && instruments.some((instrument) => instrument.name === configuredInstrument),
+          });
+        } catch {
+          error(response, 502, 'OANDA_VERIFY_FAILED', 'OANDA provider verification failed.');
+        }
+        return;
+      }
+
+      if (request.method === 'GET' && url.pathname === '/providers/oanda/candles') {
+        if (!oandaProvider || !oandaConfiguration.nas100Instrument) {
+          error(response, 409, 'OANDA_INSTRUMENT_UNCONFIGURED', 'Configure OANDA_ACCOUNT_ID, OANDA_API_TOKEN, and OANDA_NAS100_INSTRUMENT before requesting candles.');
+          return;
+        }
+        const count = parseOandaCandleCount(url.searchParams.get('count'));
+        if (count === null) {
+          error(response, 400, 'INVALID_CANDLE_COUNT', 'count must be an integer between 1 and 5000.');
+          return;
+        }
+        try {
+          json(response, 200, await oandaProvider.getH4Candles(oandaConfiguration.nas100Instrument, count));
+        } catch {
+          error(response, 502, 'OANDA_CANDLES_FAILED', 'OANDA candle retrieval failed.');
+        }
         return;
       }
 
@@ -212,6 +281,7 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
 }
 
 if (process.argv[1]?.endsWith('server.ts')) {
+  loadProjectEnvironmentForServiceCli();
   const service = createLocalService();
   service.start().then(({ host, port }) => {
     process.stdout.write(`NAS100 local service listening on http://${host}:${port}\n`);

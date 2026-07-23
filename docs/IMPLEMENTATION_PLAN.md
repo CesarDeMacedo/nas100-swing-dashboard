@@ -227,6 +227,8 @@ The dashboard now exposes a compact Analysis history overlay using only `GET /ru
 
 ## Phase 13: Market-data provider integration
 
+Read-only OANDA v20 foundation is implemented but remains isolated from Phase 13 integration. `src/providers/oanda/` parses environment-only configuration, uses a GET-only Bearer client, normalizes account instruments and midpoint H4 candles, and preserves OANDA's `complete` flag. Local service endpoints expose configuration status, explicit verification, and explicit-instrument candle retrieval without startup calls, dashboard use, scheduler use, strategy use, or SQLite writes. `OANDA_NAS100_INSTRUMENT` is deliberately not guessed; account discovery returns candidates only. `.env.example` documents local placeholders. No order, trade, position, or account-configuration code exists.
+
 - Objective: replace mock provider with a licensed live provider through adapters.
 - Scope: credentials, symbol mapping, OHLC, US500/US30 primary confirmation, Russell 2000 complementary confirmation, data health, and provider status.
 - Likely files: `apps/service/src/providers/`, settings, secure local config docs.
