@@ -9,7 +9,7 @@ Completed through the local synthetic scheduler milestone.
 - Deterministic strategy engine implemented.
 - The dashboard and Markdown report use the same calculated `DashboardState`.
 - 192 tests currently pass.
-- All market data remains synthetic.
+- The dashboard and scheduler remain synthetic; manual OANDA reports are local-only and read-only.
 - The application has no trade execution capability.
 
 - Primary instrument: NAS100
@@ -40,7 +40,9 @@ Create an OANDA Practice account in the OANDA portal, generate a personal API to
 
 `npm run service` loads the project-root `.env` file when the Node service starts; already-set operating-system environment variables take precedence. Then call `GET http://127.0.0.1:4310/providers/oanda/status` to inspect safe configuration state. `POST /providers/oanda/verify` performs one read-only instrument-list check and returns NAS100/US100 candidates without selecting one. After explicitly setting a verified `OANDA_NAS100_INSTRUMENT`, `GET /providers/oanda/candles?count=250` returns normalized midpoint H4 candles only.
 
-OANDA data is not connected to the dashboard, scheduler, strategy engine, persistence, or trading. The service uses GET-only OANDA requests and has no order, trade, or account-modification capability.
+OANDA data is not connected to the dashboard or scheduler. Manual OANDA reports use the deterministic report pipeline and local persistence only; the service uses GET-only OANDA requests and has no order, trade, or account-modification capability.
+
+`POST /runs/manual-oanda` requests 250 OANDA midpoint H4 candles, excludes every open candle, and saves one immutable local OANDA-backed report from completed candles only. It is manual and read-only; cross-market and event-risk data remain unavailable, so it cannot authorize an entry. The dashboard and synthetic scheduler remain unchanged, and no trades can be executed.
 
 ## Local Synthetic Scheduler
 

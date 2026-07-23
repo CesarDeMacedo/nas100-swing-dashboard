@@ -34,6 +34,14 @@ const startService = async (options: { schedulerEnabled?: boolean; oandaEnvironm
   return running;
 };
 
+const oandaCandles = (latestCompletedTime = '2026-07-21T20:00:00.000Z') => ({
+  candles: [
+    { time: '2026-07-21T12:00:00.000Z', complete: true, volume: 10, mid: { o: '29000', h: '29020', l: '28990', c: '29010' } },
+    { time: latestCompletedTime, complete: true, volume: 11, mid: { o: '29010', h: '29040', l: '29000', c: '29030' } },
+    { time: '2026-07-22T00:00:00.000Z', complete: false, volume: 12, mid: { o: '29030', h: '99999', l: '1', c: '99998' } },
+  ],
+});
+
 afterEach(async () => {
   while (services.length) {
     const service = services.pop();
@@ -256,5 +264,52 @@ describe('local manual-run service', () => {
     expect(body.candles[0]).toMatchObject({ isClosed: false, timeframe: 'H4', source: 'oanda-v20' });
     expect(manual.status).toBe(201);
     expect(requestInit).toMatchObject({ method: 'GET' });
+  });
+
+  it('creates an idempotent manual OANDA report from completed candles only', async () => {
+    let requestUrl = '';
+    const fetcher: typeof fetch = async (input, init) => {
+      requestUrl = input instanceof URL ? input.toString() : typeof input === 'string' ? input : input.url;
+      expect(init?.method).toBe('GET');
+      return new Response(JSON.stringify(oandaCandles()), { status: 200 });
+    };
+    const service = await startService({
+      oandaEnvironment: { OANDA_ACCOUNT_ID: 'account-never-returned', OANDA_API_TOKEN: 'token-never-returned', OANDA_NAS100_INSTRUMENT: 'NAS100_USD' },
+      oandaFetch: fetcher,
+    });
+
+    const first = await fetch(`${service.baseUrl}/runs/manual-oanda`, { method: 'POST' });
+    const firstBody = await first.json();
+    const repeated = await fetch(`${service.baseUrl}/runs/manual-oanda`, { method: 'POST' }).then((response) => response.json());
+    const stored = await fetch(`${service.baseUrl}/runs/${encodeURIComponent(firstBody.runKey)}`).then((response) => response.json());
+    const url = new URL(requestUrl);
+
+    expect(first.status).toBe(201);
+    expect(url.searchParams).toMatchObject({});
+    expect(url.searchParams.get('count')).toBe('250');
+    expect(firstBody).toMatchObject({ provider: 'oanda-v20', instrument: 'NAS100_USD', sourceCandleTime: '2026-07-21T20:00:00.000Z', fetchedCandleCount: 3, completedCandleCount: 2, excludedOpenCandleCount: 1, alreadyExists: false, isActionable: false });
+    expect(['BUY', 'SELL']).not.toContain(firstBody.action);
+    expect(repeated).toMatchObject({ runKey: firstBody.runKey, alreadyExists: true });
+    expect(stored.report).toMatchObject({ sourceCandleTime: '2026-07-21T20:00:00.000Z', currentPrice: 29030, targets: [] });
+    expect(JSON.stringify({ firstBody, repeated, stored })).not.toContain('token-never-returned');
+    expect(JSON.stringify(stored.report)).not.toContain('99999');
+  });
+
+  it('returns safe errors for unavailable configuration and malformed OANDA manual-run responses', async () => {
+    const unconfigured = await startService();
+    const unconfiguredResponse = await fetch(`${unconfigured.baseUrl}/runs/manual-oanda`, { method: 'POST' });
+    expect(unconfiguredResponse.status).toBe(409);
+    await expect(unconfiguredResponse.json()).resolves.toMatchObject({ error: { code: 'OANDA_INSTRUMENT_UNCONFIGURED' } });
+
+    const malformed = await startService({
+      oandaEnvironment: { OANDA_ACCOUNT_ID: 'account-never-returned', OANDA_API_TOKEN: 'token-never-returned', OANDA_NAS100_INSTRUMENT: 'NAS100_USD' },
+      oandaFetch: vi.fn(async () => new Response(JSON.stringify({ candles: [{ complete: true }] }), { status: 200 })),
+    });
+    const malformedResponse = await fetch(`${malformed.baseUrl}/runs/manual-oanda`, { method: 'POST' });
+    const body = await malformedResponse.json();
+
+    expect(malformedResponse.status).toBe(502);
+    expect(body).toEqual({ error: { code: 'OANDA_MANUAL_RUN_FAILED', message: 'Manual OANDA analysis could not be completed.' } });
+    expect(JSON.stringify(body)).not.toContain('token-never-returned');
   });
 });

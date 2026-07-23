@@ -1,0 +1,77 @@
+// @vitest-environment node
+
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { afterEach, describe, expect, it } from 'vitest';
+
+import { AnalysisRepository } from '../persistence/analysisRepository';
+import type { OandaH4CandleResult } from '../providers/oanda/types';
+import { buildOandaReportInputs, runManualOandaAnalysis } from './oandaRun';
+
+const directories: string[] = [];
+
+const source = (latestTime = '2026-07-21T20:00:00.000Z'): OandaH4CandleResult => ({
+  provider: 'oanda-v20', environment: 'practice', instrument: 'NAS100_USD', timeframe: 'H4',
+  candles: [
+    { time: '2026-07-21T12:00:00.000Z', open: 29000, high: 29020, low: 28990, close: 29010, isClosed: true, volume: 10, instrument: 'NAS100_USD', timeframe: 'H4', source: 'oanda-v20' },
+    { time: latestTime, open: 29010, high: 29040, low: 29000, close: 29030, isClosed: true, volume: 11, instrument: 'NAS100_USD', timeframe: 'H4', source: 'oanda-v20' },
+    { time: '2026-07-22T00:00:00.000Z', open: 29030, high: 99999, low: 1, close: 99998, isClosed: false, volume: 12, instrument: 'NAS100_USD', timeframe: 'H4', source: 'oanda-v20' },
+  ],
+});
+
+const repository = () => {
+  const directory = mkdtempSync(join(tmpdir(), 'nas100-oanda-run-'));
+  directories.push(directory);
+  return new AnalysisRepository(join(directory, 'history.sqlite'));
+};
+
+afterEach(() => {
+  while (directories.length) rmSync(directories.pop()!, { recursive: true, force: true });
+});
+
+describe('manual OANDA analysis run', () => {
+  it('builds a validated non-synthetic completed-only dataset and explicit unavailable contexts', () => {
+    const { analysis, candles } = buildOandaReportInputs(source(), '2026-07-22T01:00:00.000Z');
+
+    expect(candles).toMatchObject({ isSynthetic: false, instrument: 'NAS100_USD', timeframe: 'H4' });
+    expect(candles.candles).toHaveLength(2);
+    expect(candles.candles.at(-1)).toMatchObject({ time: '2026-07-21T20:00:00.000Z', close: 29030, isClosed: true });
+    expect(JSON.stringify(candles)).not.toContain('99999');
+    expect(analysis).toMatchObject({ completedCandleAt: '2026-07-21T20:00:00.000Z', currentPrice: 29030, supportZones: [], resistanceZones: [] });
+    expect(analysis.crossMarket).toMatchObject({ confirmationStatus: 'UNAVAILABLE', dataFreshness: 'MISSING' });
+    expect(analysis.eventRisk[0]).toMatchObject({ status: 'UNAVAILABLE', freshness: 'MISSING' });
+    expect(analysis.marketContext.join(' ')).not.toContain('fixture');
+  });
+
+  it('persists one safe immutable report per latest completed candle', () => {
+    const store = repository();
+    const first = runManualOandaAnalysis(store, source());
+    const repeated = runManualOandaAnalysis(store, source());
+    const next = runManualOandaAnalysis(store, source('2026-07-22T04:00:00.000Z'));
+
+    expect(first.outcome).toBe('created');
+    expect(first.report).toMatchObject({ sourceCandleTime: '2026-07-21T20:00:00.000Z', currentPrice: 29030, isActionable: false });
+    expect(['WAIT', 'NO_TRADE', 'WAIT_FOR_PULLBACK', 'WAIT_FOR_NEXT_4H_CLOSE']).toContain(first.report?.action);
+    expect(['BUY', 'SELL']).not.toContain(first.report?.action);
+    expect(first.report?.entryPrice).toBeNull();
+    expect(first.report?.targets).toEqual([]);
+    expect(repeated).toMatchObject({ outcome: 'already_exists', run: { id: first.run.id } });
+    expect(next).toMatchObject({ outcome: 'created' });
+    expect(next.run.runKey).not.toBe(first.run.runKey);
+    store.close();
+  });
+
+  it('records a safe blocked run when OANDA returns no completed candles', () => {
+    const store = repository();
+    const openOnly = { ...source(), candles: [source().candles.at(-1)!] };
+
+    const result = runManualOandaAnalysis(store, openOnly);
+
+    expect(result).toMatchObject({ outcome: 'blocked', report: null, completedCandleCount: 0, excludedOpenCandleCount: 1 });
+    expect(result.run.status).toBe('BLOCKED');
+    expect(result.run.runKey).not.toContain('2026-07-22T00:00:00.000Z');
+    store.close();
+  });
+});

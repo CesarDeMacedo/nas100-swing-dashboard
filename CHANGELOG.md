@@ -1,5 +1,11 @@
 # Changelog
 
+## Manual OANDA Analysis Run
+
+- Added a manual, read-only `POST /runs/manual-oanda` path that requests 250 OANDA H4 midpoint candles, excludes open candles, and saves immutable completed-candle reports locally.
+- Cross-market confirmation and event-risk data remain explicitly unavailable, so OANDA reports cannot authorize an entry.
+- The dashboard and synthetic scheduler remain unchanged; no trading capability was added.
+
 ## OANDA Read-Only Provider Foundation
 
 - Added environment-only OANDA v20 configuration, GET-only account instrument discovery, candidate matching, and normalized midpoint H4 candle retrieval.

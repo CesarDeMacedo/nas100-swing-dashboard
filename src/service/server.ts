@@ -5,6 +5,7 @@ import { AnalysisRepository, defaultPersistencePath, type StoredAnalysisRun } fr
 import { oandaConfigurationStatus, parseOandaConfiguration } from '../providers/oanda/config';
 import { OandaProvider, findNas100CandidatesFromInstruments } from '../providers/oanda/oandaProvider';
 import { runSyntheticFixtureAnalysis } from './fixtureRun';
+import { runManualOandaAnalysis } from './oandaRun';
 import { FixtureScheduler, type SchedulerStatus } from './scheduler/fixtureScheduler';
 import { parseSchedulerEnabled } from './scheduler/torontoSchedule';
 
@@ -187,6 +188,40 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
           json(response, 200, await oandaProvider.getH4Candles(oandaConfiguration.nas100Instrument, count));
         } catch {
           error(response, 502, 'OANDA_CANDLES_FAILED', 'OANDA candle retrieval failed.');
+        }
+        return;
+      }
+
+      if (request.method === 'POST' && url.pathname === '/runs/manual-oanda') {
+        if (!oandaProvider || !oandaConfiguration.nas100Instrument) {
+          error(response, 409, 'OANDA_INSTRUMENT_UNCONFIGURED', 'Configure OANDA_ACCOUNT_ID, OANDA_API_TOKEN, and OANDA_NAS100_INSTRUMENT before requesting a manual OANDA run.');
+          return;
+        }
+        try {
+          const source = await oandaProvider.getH4Candles(oandaConfiguration.nas100Instrument, 250);
+          const result = runManualOandaAnalysis(activeRepository, source);
+          if (!result.report) {
+            error(response, 409, result.outcome === 'failed' ? 'OANDA_MANUAL_RUN_FAILED' : 'OANDA_NO_COMPLETED_CANDLES', result.message ?? 'Manual OANDA analysis could not be completed.');
+            return;
+          }
+          json(response, result.outcome === 'created' ? 201 : 200, {
+            id: result.run.id,
+            runKey: result.run.runKey,
+            provider: result.provider,
+            instrument: result.instrument,
+            sourceCandleTime: result.report.sourceCandleTime,
+            fetchedCandleCount: result.fetchedCandleCount,
+            completedCandleCount: result.completedCandleCount,
+            excludedOpenCandleCount: result.excludedOpenCandleCount,
+            action: result.report.action,
+            direction: result.report.direction,
+            score: result.report.score,
+            grade: result.report.grade,
+            isActionable: result.report.isActionable,
+            alreadyExists: result.outcome === 'already_exists',
+          });
+        } catch {
+          error(response, 502, 'OANDA_MANUAL_RUN_FAILED', 'Manual OANDA analysis could not be completed.');
         }
         return;
       }
