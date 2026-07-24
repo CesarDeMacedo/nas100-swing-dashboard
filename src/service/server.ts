@@ -5,6 +5,7 @@ import { AnalysisRepository, defaultPersistencePath, type StoredAnalysisRun } fr
 import { oandaConfigurationStatus, parseOandaConfiguration } from '../providers/oanda/config';
 import { OandaProvider, findNas100CandidatesFromInstruments } from '../providers/oanda/oandaProvider';
 import { runSyntheticFixtureAnalysis } from './fixtureRun';
+import { LiveH4Stream } from './liveH4Stream';
 import { executeManualOandaAnalysis, runManualOandaAnalysis } from './oandaRun';
 import { FixtureScheduler, type SchedulerStatus } from './scheduler/fixtureScheduler';
 import { parseSchedulerEnabled, parseSchedulerProvider } from './scheduler/torontoSchedule';
@@ -64,8 +65,6 @@ const json = (response: ServerResponse, statusCode: number, payload: unknown) =>
 const error = (response: ServerResponse, statusCode: number, code: string, message: string) =>
   json(response, statusCode, { error: { code, message } });
 
-const sse = (response: ServerResponse, event: string, payload: unknown) => response.write(`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`);
-
 const summary = (run: StoredAnalysisRun, report: NonNullable<ReturnType<typeof runSyntheticFixtureAnalysis>['report']>, alreadyExists: boolean) => ({
   id: run.id,
   runKey: run.runKey,
@@ -106,87 +105,21 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
   const schedulerProvider = options.schedulerProvider ?? parseSchedulerProvider(process.env.NAS100_DASHBOARD_SCHEDULER_PROVIDER);
   const oandaConfiguration = parseOandaConfiguration(options.oandaEnvironment);
   const oandaProvider = oandaConfiguration.state === 'configured' ? new OandaProvider(oandaConfiguration, options.oandaFetch) : null;
+  const configuredOanda = oandaConfiguration.state === 'configured' && oandaConfiguration.nas100Instrument
+    ? { instrument: oandaConfiguration.nas100Instrument, environment: oandaConfiguration.environment }
+    : null;
+  const liveStream = oandaProvider && configuredOanda
+    ? new LiveH4Stream({
+        instrument: configuredOanda.instrument,
+        environment: configuredOanda.environment,
+        fetchSnapshot: (count) => oandaProvider.getH4Candles(configuredOanda.instrument, count),
+        openPricingStream: (signal) => oandaProvider.openPricingStream(configuredOanda.instrument, signal),
+        reconnectDelaysMs: options.liveReconnectDelaysMs,
+      })
+    : null;
   let repository: AnalysisRepository | null = null;
   let server: Server | null = null;
   let boundPort = configuredPort;
-  const liveSubscribers = new Set<ServerResponse>();
-  let liveAbort: AbortController | null = null;
-  let liveOpenCandle: Awaited<ReturnType<NonNullable<typeof oandaProvider>['getH4Candles']>>['candles'][number] | null = null;
-  let liveLastCompletedTime: string | null = null;
-  let liveStopTimer: ReturnType<typeof setTimeout> | null = null;
-  let liveReconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  let liveReconnectAttempt = 0;
-  let liveRolloverRefresh: Promise<void> | null = null;
-  const reconnectDelays = options.liveReconnectDelaysMs ?? [1000, 2000, 5000, 10000];
-  const h4Window = (time: string) => Math.floor(Date.parse(time) / (4 * 60 * 60 * 1000));
-  const liveBroadcast = (event: string, payload: unknown) => liveSubscribers.forEach((subscriber) => sse(subscriber, event, payload));
-  const liveSnapshot = async () => {
-    if (!oandaProvider || !oandaConfiguration.nas100Instrument || oandaConfiguration.state !== 'configured') throw new Error('unconfigured');
-    const source = await oandaProvider.getH4Candles(oandaConfiguration.nas100Instrument, 2);
-    liveOpenCandle = [...source.candles].reverse().find((candle) => !candle.isClosed) ?? null;
-    liveLastCompletedTime = source.candles.filter((candle) => candle.isClosed).at(-1)?.time ?? null;
-    return { provider: 'oanda-v20', environment: oandaConfiguration.environment, instrument: source.instrument, receivedAt: new Date().toISOString(), currentPrice: liveOpenCandle?.close ?? null, openCandle: liveOpenCandle, lastCompletedH4SourceTime: liveLastCompletedTime, streamState: 'live' as const };
-  };
-  type LiveConnectionState = 'idle' | 'connecting' | 'live';
-  let liveConnectionState: LiveConnectionState = 'idle';
-  let liveLastSnapshot: Awaited<ReturnType<typeof liveSnapshot>> | null = null;
-  const startLiveStream = async () => {
-    // liveReconnectTimer is cleared (set to null) right before the scheduled callback invokes this
-    // function, so this guard only blocks *other* callers (e.g. a subscriber joining mid-backoff)
-    // from short-circuiting the scheduled delay — it never blocks the reconnect itself.
-    if (liveAbort || liveReconnectTimer || !oandaProvider || !oandaConfiguration.nas100Instrument) return;
-    const controller = new AbortController();
-    liveAbort = controller;
-    try {
-      const snapshot = await liveSnapshot();
-      liveLastSnapshot = snapshot;
-      liveConnectionState = 'connecting';
-      liveBroadcast('connection', { state: 'connecting', receivedAt: snapshot.receivedAt });
-      liveBroadcast('snapshot', snapshot);
-      const response = await oandaProvider.openPricingStream(oandaConfiguration.nas100Instrument, controller.signal);
-      liveReconnectAttempt = 0;
-      liveConnectionState = 'live';
-      liveBroadcast('connection', { state: 'live', receivedAt: new Date().toISOString() });
-      const reader = response.body?.getReader();
-      if (!reader) throw new Error('missing stream body');
-      let pending = '';
-      while (!controller.signal.aborted) {
-        const chunk = await reader.read();
-        if (chunk.done) break;
-        pending += new TextDecoder().decode(chunk.value, { stream: true });
-        const lines = pending.split('\n'); pending = lines.pop() ?? '';
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          try {
-            const message: unknown = JSON.parse(line);
-            if (!message || typeof message !== 'object') throw new Error('invalid');
-            const record = message as Record<string, unknown>;
-            if (record.type === 'PricingHeartbeat') { liveBroadcast('heartbeat', { receivedAt: typeof record.time === 'string' ? record.time : new Date().toISOString(), streamState: 'live' }); continue; }
-            if (record.type !== 'PRICE' || !Array.isArray(record.bids) || !Array.isArray(record.asks)) continue;
-            const bid = Number((record.bids[0] as Record<string, unknown> | undefined)?.price);
-            const ask = Number((record.asks[0] as Record<string, unknown> | undefined)?.price);
-            if (!Number.isFinite(bid) || !Number.isFinite(ask)) throw new Error('invalid price');
-            const midpoint = (bid + ask) / 2;
-            const receivedAt = typeof record.time === 'string' ? record.time : new Date().toISOString();
-            if (liveOpenCandle && Number.isFinite(Date.parse(receivedAt)) && h4Window(receivedAt) > h4Window(liveOpenCandle.time) && !liveRolloverRefresh) {
-              liveRolloverRefresh = liveSnapshot().then(() => undefined).catch(() => { liveBroadcast('error', { state: 'stale', message: 'OANDA live H4 rollover refresh is unavailable.', receivedAt: new Date().toISOString() }); }).finally(() => { liveRolloverRefresh = null; });
-            }
-            if (liveOpenCandle) liveOpenCandle = { ...liveOpenCandle, high: Math.max(liveOpenCandle.high, midpoint), low: Math.min(liveOpenCandle.low, midpoint), close: midpoint, isClosed: false };
-            liveBroadcast('price', { currentPrice: midpoint, receivedAt, streamState: 'live' });
-            if (liveOpenCandle) liveBroadcast('candle', { candle: liveOpenCandle, receivedAt });
-          } catch { liveBroadcast('error', { state: 'stale', message: 'OANDA live observation received invalid stream data.', receivedAt: new Date().toISOString() }); }
-        }
-      }
-      if (!controller.signal.aborted) { liveConnectionState = 'idle'; liveBroadcast('error', { state: 'reconnecting', message: 'OANDA live observation is reconnecting.', receivedAt: new Date().toISOString() }); scheduleReconnect(); }
-    } catch { if (!controller.signal.aborted) { liveConnectionState = 'idle'; liveBroadcast('error', { state: 'reconnecting', message: 'OANDA live observation is reconnecting.', receivedAt: new Date().toISOString() }); scheduleReconnect(); } }
-    finally { if (liveAbort === controller) liveAbort = null; }
-  };
-  const scheduleReconnect = () => {
-    if (liveSubscribers.size === 0 || liveReconnectTimer) return;
-    const delay = reconnectDelays[Math.min(liveReconnectAttempt, reconnectDelays.length - 1)]; liveReconnectAttempt += 1;
-    liveReconnectTimer = setTimeout(() => { liveReconnectTimer = null; void startLiveStream(); }, delay);
-  };
-  const stopLiveStream = () => { liveAbort?.abort(); liveAbort = null; liveConnectionState = 'idle'; liveLastSnapshot = null; if (liveReconnectTimer) clearTimeout(liveReconnectTimer); liveReconnectTimer = null; liveReconnectAttempt = 0; liveOpenCandle = null; };
   const scheduler = new FixtureScheduler({
     enabled: schedulerEnabled,
     intervalMs: options.schedulerIntervalMs,
@@ -245,7 +178,7 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
       }
 
       if (request.method === 'GET' && url.pathname === '/providers/oanda/live-h4') {
-        if (!oandaProvider || !oandaConfiguration.nas100Instrument || oandaConfiguration.state !== 'configured') {
+        if (!liveStream) {
           error(response, 409, 'OANDA_UNCONFIGURED', 'OANDA live observation requires configured credentials and an explicit instrument.');
           return;
         }
@@ -256,35 +189,8 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
         // resolve until some future broadcast happens to write something, which can be seconds
         // away or, in the worst case (last attempt exhausted, no further reconnect), never.
         response.flushHeaders();
-        if (liveStopTimer) { clearTimeout(liveStopTimer); liveStopTimer = null; }
-        liveSubscribers.add(response);
-        if (liveConnectionState === 'live') {
-          const receivedAt = new Date().toISOString();
-          sse(response, 'connection', { state: 'live', receivedAt });
-          sse(response, 'snapshot', {
-            provider: 'oanda-v20' as const,
-            environment: oandaConfiguration.environment,
-            instrument: oandaConfiguration.nas100Instrument,
-            receivedAt,
-            currentPrice: liveOpenCandle?.close ?? null,
-            openCandle: liveOpenCandle,
-            lastCompletedH4SourceTime: liveLastCompletedTime,
-            streamState: 'live' as const,
-          });
-        } else if (liveConnectionState === 'connecting' && liveLastSnapshot) {
-          // A subscriber joining mid-handshake (snapshot fetched, upstream pricing stream not
-          // yet open) gets the same 'connecting' + snapshot replay a subscriber present from
-          // the start would have seen, instead of sitting with no event until 'live'/'error'.
-          const receivedAt = new Date().toISOString();
-          sse(response, 'connection', { state: 'connecting', receivedAt });
-          sse(response, 'snapshot', { ...liveLastSnapshot, receivedAt });
-        } else {
-          void startLiveStream();
-        }
-        request.on('close', () => {
-          liveSubscribers.delete(response);
-          if (liveSubscribers.size === 0) liveStopTimer = setTimeout(stopLiveStream, 1_000);
-        });
+        liveStream.subscribe(response);
+        request.on('close', () => liveStream.unsubscribe(response));
         return;
       }
 
@@ -441,8 +347,7 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
     stop: () =>
       new Promise((resolve, reject) => {
         scheduler.stop();
-        stopLiveStream();
-        liveSubscribers.clear();
+        liveStream?.stop();
         const activeServer = server;
         server = null;
         if (!activeServer) {
