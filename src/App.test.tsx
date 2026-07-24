@@ -135,13 +135,13 @@ describe('dashboard rendering', () => {
     fireEvent.click(await within(historyDialog).findByRole('button', { name: 'View in dashboard' }));
 
     expect(screen.queryByRole('dialog', { name: 'Analysis history' })).not.toBeInTheDocument();
-    expect(screen.getByText('OANDA PRACTICE — SAVED ANALYSIS')).toBeVisible();
+    expect(await screen.findByText('OANDA PRACTICE — SAVED ANALYSIS')).toBeVisible();
     expect(screen.getByTestId('current-price-marker')).toHaveTextContent('30,123');
     expect(screen.getAllByTestId('support-zone')).toHaveLength(1);
     expect(screen.getByText(/saved OANDA candles/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Return to mock dashboard' }));
     expect(screen.queryByText('OANDA PRACTICE — SAVED ANALYSIS')).not.toBeInTheDocument();
-    expect(screen.getByTestId('current-price-marker')).toHaveTextContent('29,082');
+    expect(await screen.findByTestId('current-price-marker')).toHaveTextContent('29,082');
   });
 
   it('shows empty and failed history states without execution wording', async () => {
@@ -206,10 +206,10 @@ describe('dashboard rendering', () => {
     expect(screen.queryByText('Target 1 29,220')).not.toBeInTheDocument();
   });
 
-  it('renders support, resistance, preferred-entry, and current-price markers from data', () => {
+  it('renders support, resistance, preferred-entry, and current-price markers from data', async () => {
     render(<App />);
 
-    expect(screen.getAllByTestId('support-zone')).toHaveLength(2);
+    expect(await screen.findAllByTestId('support-zone')).toHaveLength(2);
     expect(screen.getAllByTestId('resistance-zone')).toHaveLength(2);
     expect(screen.getByTestId('preferred-entry-zone')).toHaveAccessibleName(
       'Preferred long pullback zone, 28,880 to 28,920',
@@ -225,20 +225,20 @@ describe('dashboard rendering', () => {
     expect(screen.getByText('No additional market context was provided.')).toBeVisible();
   });
 
-  it('shows WAIT FOR NEXT 4H CLOSE when an open candle fixture requests BUY', () => {
+  it('shows WAIT FOR NEXT 4H CLOSE when an open candle fixture requests BUY', async () => {
     render(<App analysisSource={openCandleFixture} candleSource={openCandleDatasetFixture} />);
 
     expect(screen.getByLabelText('Current action: WAIT FOR NEXT 4H CLOSE')).toBeVisible();
     expect(screen.queryByLabelText('Current action: BUY')).not.toBeInTheDocument();
     expect(screen.getByText('An open H4 candle cannot authorize an entry.')).toBeVisible();
-    expect(screen.getByTestId('latest-candle-status')).toHaveTextContent('Open H4 - unconfirmed');
+    expect(await screen.findByTestId('latest-candle-status')).toHaveTextContent('Open H4 - unconfirmed');
   });
 
-  it('keeps the dashboard available but withholds an invalid candle chart', () => {
+  it('keeps the dashboard available but withholds an invalid candle chart', async () => {
     render(<App candleSource={invalidCandleDatasetFixture} />);
 
     expect(screen.getByTestId('dashboard')).toBeVisible();
-    expect(screen.getByTestId('chart-error-state')).toBeVisible();
+    expect(await screen.findByTestId('chart-error-state')).toBeVisible();
     expect(screen.queryByTestId('financial-chart')).not.toBeInTheDocument();
   });
 

@@ -1,15 +1,19 @@
+import { lazy, Suspense } from 'react';
+
 import type { SafeAnalysis } from '../domain/analysis';
 import type { CandleDatasetParseResult } from '../domain/candles';
 import type { DashboardState } from '../application/buildDashboardState';
 import type { ManualRunResult, ServiceAvailability } from '../serviceClient/localAnalysisService';
 import { AnalysisSidebar } from './sidebar/AnalysisSidebar';
-import { CandlestickChartPanel } from './chart/CandlestickChartPanel';
 import { DashboardHeader } from './DashboardHeader';
 import { MetricsFooter } from './MetricsFooter';
 import { PrimaryActionBanner } from './PrimaryActionBanner';
 import { SetupSummary } from './SetupSummary';
 import { AnalysisHistoryPanel } from './AnalysisHistoryPanel';
 import type { HistoryResult, RunDetailResult, SavedOandaDisplaySnapshot } from '../serviceClient/localAnalysisService';
+
+// Lazy-loaded so the ~500kB lightweight-charts dependency is not part of the initial bundle.
+const CandlestickChartPanel = lazy(() => import('./chart/CandlestickChartPanel').then((module) => ({ default: module.CandlestickChartPanel })));
 
 type DashboardProps = {
   analysis: SafeAnalysis;
@@ -76,12 +80,14 @@ export function Dashboard({ analysis, candleResult, dashboardState, serviceAvail
         />
       </header>
       <div className="dashboard-main">
-        <CandlestickChartPanel
-          analysis={analysis}
-          candleResult={candleResult}
-          dashboardState={state}
-          savedMetadata={savedMetadata}
-        />
+        <Suspense fallback={<div className="chart-panel-loading" role="status">Loading chart…</div>}>
+          <CandlestickChartPanel
+            analysis={analysis}
+            candleResult={candleResult}
+            dashboardState={state}
+            savedMetadata={savedMetadata}
+          />
+        </Suspense>
         <AnalysisSidebar analysis={analysis} dashboardState={state} />
       </div>
       <MetricsFooter analysis={analysis} dashboardState={state} />

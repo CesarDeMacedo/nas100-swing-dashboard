@@ -1,8 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 
 import { AppShell } from './components/AppShell';
 import { Dashboard } from './components/Dashboard';
-import { OandaChartPreview } from './components/OandaChartPreview';
 import { ErrorState, LoadingState } from './components/States';
 import { currentAnalysisSource } from './domain/fixtures';
 import { parseAnalysis } from './domain/analysis';
@@ -11,6 +10,9 @@ import { buildDashboardState } from './application/buildDashboardState';
 import { currentCandleDatasetSource } from './domain/fixtures';
 import { useDashboardStore } from './store/dashboardStore';
 import { localAnalysisService, type HistoryResult, type LocalAnalysisServiceClient, type ManualRunResult, type OandaPreviewData, type OandaPreviewResult, type RunDetailResult, type SavedOandaDisplaySnapshot, type ServiceAvailability } from './serviceClient/localAnalysisService';
+
+// Lazy-loaded so the ~500kB lightweight-charts dependency is not part of the initial bundle.
+const OandaChartPreview = lazy(() => import('./components/OandaChartPreview').then((module) => ({ default: module.OandaChartPreview })));
 
 type AppProps = {
   analysisSource?: unknown;
@@ -132,7 +134,11 @@ export default function App({
 
   return (
     <AppShell>
-      {oandaPreview ? <OandaChartPreview data={oandaPreview} loading={oandaPreviewLoading} error={oandaPreviewError} onRefresh={loadOandaPreview} onBack={() => { setOandaPreview(null); setOandaPreviewError(null); }} /> : null}
+      {oandaPreview ? (
+        <Suspense fallback={<div className="chart-panel-loading" role="status">Loading chart…</div>}>
+          <OandaChartPreview data={oandaPreview} loading={oandaPreviewLoading} error={oandaPreviewError} onRefresh={loadOandaPreview} onBack={() => { setOandaPreview(null); setOandaPreviewError(null); }} />
+        </Suspense>
+      ) : null}
       {loading ? <LoadingState /> : null}
       {!loading && !result.success ? (
         <ErrorState detail="The local analysis object failed validation. The dashboard has been withheld." />
