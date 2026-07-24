@@ -164,6 +164,49 @@ describe('OANDA live H4 observation lifecycle', () => {
     expect((firstPrice as { currentPrice: number }).currentPrice).toBe(29011);
   }, 10000);
 
+  it('replays connecting + snapshot to a subscriber joining mid-handshake, and never opens a second stream request for it', async () => {
+    // The H4 snapshot fetch resolves immediately (as in buildFetcher), but the upstream
+    // pricing-stream connection is gated open until the test explicitly releases it — this
+    // creates a real, controllable window in the 'connecting' state to join a subscriber into.
+    const release: { current: (() => void) | null } = { current: null };
+    const streamConnectGate = new Promise<void>((resolve) => { release.current = resolve; });
+    const streamRequests: ControllableStream[] = [];
+    let h4CandleCalls = 0;
+    const fetcher: typeof fetch = async (input) => {
+      const url = input instanceof URL ? input.toString() : typeof input === 'string' ? input : input.url;
+      if (url.includes('/pricing/stream')) {
+        await streamConnectGate;
+        const controllable = createControllableStream();
+        streamRequests.push(controllable);
+        return new Response(controllable.stream, { status: 200 });
+      }
+      const parsed = new URL(url);
+      const granularity = parsed.searchParams.get('granularity');
+      if (granularity === 'D') return new Response(JSON.stringify({ candles: [dailyCandle(0), dailyCandle(1)] }), { status: 200 });
+      h4CandleCalls += 1;
+      return new Response(JSON.stringify({ candles: [closedCandle, openCandleWindow1] }), { status: 200 });
+    };
+    const service = await startService(fetcher);
+
+    const first = readSse(await fetch(`${service.baseUrl}/providers/oanda/live-h4`));
+    await waitFor(() => first.events.some((event) => event.event === 'snapshot'));
+    expect(first.events.some((event) => event.event === 'connection' && (event.data as { state: string }).state === 'connecting')).toBe(true);
+    expect(first.events.some((event) => event.event === 'connection' && (event.data as { state: string }).state === 'live')).toBe(false);
+
+    // A second subscriber joins while the first is still stuck mid-handshake (gated).
+    const second = readSse(await fetch(`${service.baseUrl}/providers/oanda/live-h4`));
+    await waitFor(() => second.events.some((event) => event.event === 'snapshot'));
+    expect(second.events.some((event) => event.event === 'connection' && (event.data as { state: string }).state === 'connecting')).toBe(true);
+    // It must not have triggered a second H4 snapshot fetch or a second stream connection.
+    expect(h4CandleCalls).toBe(1);
+    expect(streamRequests).toHaveLength(0);
+
+    release.current?.();
+    await waitFor(() => first.events.some((event) => event.event === 'connection' && (event.data as { state: string }).state === 'live'));
+    await waitFor(() => second.events.some((event) => event.event === 'connection' && (event.data as { state: string }).state === 'live'));
+    expect(streamRequests).toHaveLength(1);
+  }, 10000);
+
   it('reconnects with backoff after the upstream pricing stream ends unexpectedly', async () => {
     const { fetcher, streamRequests } = buildFetcher();
     const service = await startService(fetcher);

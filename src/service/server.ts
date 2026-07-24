@@ -117,7 +117,6 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
   let liveReconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let liveReconnectAttempt = 0;
   let liveRolloverRefresh: Promise<void> | null = null;
-  let liveIsConnected = false;
   const reconnectDelays = options.liveReconnectDelaysMs ?? [1000, 2000, 5000, 10000];
   const h4Window = (time: string) => Math.floor(Date.parse(time) / (4 * 60 * 60 * 1000));
   const liveBroadcast = (event: string, payload: unknown) => liveSubscribers.forEach((subscriber) => sse(subscriber, event, payload));
@@ -128,6 +127,9 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
     liveLastCompletedTime = source.candles.filter((candle) => candle.isClosed).at(-1)?.time ?? null;
     return { provider: 'oanda-v20', environment: oandaConfiguration.environment, instrument: source.instrument, receivedAt: new Date().toISOString(), currentPrice: liveOpenCandle?.close ?? null, openCandle: liveOpenCandle, lastCompletedH4SourceTime: liveLastCompletedTime, streamState: 'live' as const };
   };
+  type LiveConnectionState = 'idle' | 'connecting' | 'live';
+  let liveConnectionState: LiveConnectionState = 'idle';
+  let liveLastSnapshot: Awaited<ReturnType<typeof liveSnapshot>> | null = null;
   const startLiveStream = async () => {
     // liveReconnectTimer is cleared (set to null) right before the scheduled callback invokes this
     // function, so this guard only blocks *other* callers (e.g. a subscriber joining mid-backoff)
@@ -137,18 +139,13 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
     liveAbort = controller;
     try {
       const snapshot = await liveSnapshot();
-      // TODO(live-stream lifecycle gap): a subscriber that joins between this broadcast and the
-      // 'live' broadcast below (i.e. while openPricingStream is still in flight) never receives
-      // 'connecting' or 'snapshot' — those already fired to whoever was subscribed at the time.
-      // It just sits with no event until 'live' (or 'error') arrives. The late-join replay below
-      // only covers the already-connected case (liveIsConnected === true); it does not track or
-      // replay an in-progress 'connecting' state. Not fixed yet — needs a tri-state
-      // ('idle' | 'connecting' | 'live') instead of the current boolean if closed.
+      liveLastSnapshot = snapshot;
+      liveConnectionState = 'connecting';
       liveBroadcast('connection', { state: 'connecting', receivedAt: snapshot.receivedAt });
       liveBroadcast('snapshot', snapshot);
       const response = await oandaProvider.openPricingStream(oandaConfiguration.nas100Instrument, controller.signal);
       liveReconnectAttempt = 0;
-      liveIsConnected = true;
+      liveConnectionState = 'live';
       liveBroadcast('connection', { state: 'live', receivedAt: new Date().toISOString() });
       const reader = response.body?.getReader();
       if (!reader) throw new Error('missing stream body');
@@ -180,8 +177,8 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
           } catch { liveBroadcast('error', { state: 'stale', message: 'OANDA live observation received invalid stream data.', receivedAt: new Date().toISOString() }); }
         }
       }
-      if (!controller.signal.aborted) { liveIsConnected = false; liveBroadcast('error', { state: 'reconnecting', message: 'OANDA live observation is reconnecting.', receivedAt: new Date().toISOString() }); scheduleReconnect(); }
-    } catch { if (!controller.signal.aborted) { liveIsConnected = false; liveBroadcast('error', { state: 'reconnecting', message: 'OANDA live observation is reconnecting.', receivedAt: new Date().toISOString() }); scheduleReconnect(); } }
+      if (!controller.signal.aborted) { liveConnectionState = 'idle'; liveBroadcast('error', { state: 'reconnecting', message: 'OANDA live observation is reconnecting.', receivedAt: new Date().toISOString() }); scheduleReconnect(); }
+    } catch { if (!controller.signal.aborted) { liveConnectionState = 'idle'; liveBroadcast('error', { state: 'reconnecting', message: 'OANDA live observation is reconnecting.', receivedAt: new Date().toISOString() }); scheduleReconnect(); } }
     finally { if (liveAbort === controller) liveAbort = null; }
   };
   const scheduleReconnect = () => {
@@ -189,7 +186,7 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
     const delay = reconnectDelays[Math.min(liveReconnectAttempt, reconnectDelays.length - 1)]; liveReconnectAttempt += 1;
     liveReconnectTimer = setTimeout(() => { liveReconnectTimer = null; void startLiveStream(); }, delay);
   };
-  const stopLiveStream = () => { liveAbort?.abort(); liveAbort = null; liveIsConnected = false; if (liveReconnectTimer) clearTimeout(liveReconnectTimer); liveReconnectTimer = null; liveReconnectAttempt = 0; liveOpenCandle = null; };
+  const stopLiveStream = () => { liveAbort?.abort(); liveAbort = null; liveConnectionState = 'idle'; liveLastSnapshot = null; if (liveReconnectTimer) clearTimeout(liveReconnectTimer); liveReconnectTimer = null; liveReconnectAttempt = 0; liveOpenCandle = null; };
   const scheduler = new FixtureScheduler({
     enabled: schedulerEnabled,
     intervalMs: options.schedulerIntervalMs,
@@ -261,7 +258,7 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
         response.flushHeaders();
         if (liveStopTimer) { clearTimeout(liveStopTimer); liveStopTimer = null; }
         liveSubscribers.add(response);
-        if (liveIsConnected) {
+        if (liveConnectionState === 'live') {
           const receivedAt = new Date().toISOString();
           sse(response, 'connection', { state: 'live', receivedAt });
           sse(response, 'snapshot', {
@@ -274,6 +271,13 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
             lastCompletedH4SourceTime: liveLastCompletedTime,
             streamState: 'live' as const,
           });
+        } else if (liveConnectionState === 'connecting' && liveLastSnapshot) {
+          // A subscriber joining mid-handshake (snapshot fetched, upstream pricing stream not
+          // yet open) gets the same 'connecting' + snapshot replay a subscriber present from
+          // the start would have seen, instead of sitting with no event until 'live'/'error'.
+          const receivedAt = new Date().toISOString();
+          sse(response, 'connection', { state: 'connecting', receivedAt });
+          sse(response, 'snapshot', { ...liveLastSnapshot, receivedAt });
         } else {
           void startLiveStream();
         }
