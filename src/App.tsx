@@ -9,7 +9,7 @@ import { parseCandleDataset } from './domain/candles';
 import { buildDashboardState } from './application/buildDashboardState';
 import { currentCandleDatasetSource } from './domain/fixtures';
 import { useDashboardStore } from './store/dashboardStore';
-import { localAnalysisService, type HistoryResult, type LocalAnalysisServiceClient, type ManualRunResult, type OandaPreviewData, type OandaPreviewResult, type RunDetailResult, type SavedOandaDisplaySnapshot, type ServiceAvailability } from './serviceClient/localAnalysisService';
+import { localAnalysisService, type HistoryResult, type LocalAnalysisServiceClient, type ManualRunResult, type OandaPreviewData, type OandaPreviewResult, type OandaProviderStatus, type RunDetailResult, type SavedOandaDisplaySnapshot, type ServiceAvailability } from './serviceClient/localAnalysisService';
 
 // Lazy-loaded so the ~500kB lightweight-charts dependency is not part of the initial bundle.
 const OandaChartPreview = lazy(() => import('./components/OandaChartPreview').then((module) => ({ default: module.OandaChartPreview })));
@@ -48,6 +48,7 @@ export default function App({
   const [oandaPreview, setOandaPreview] = useState<OandaPreviewData | null>(null);
   const [oandaPreviewLoading, setOandaPreviewLoading] = useState(false);
   const [oandaPreviewError, setOandaPreviewError] = useState<string | null>(null);
+  const [oandaStatus, setOandaStatus] = useState<'checking' | OandaProviderStatus | null>(null);
   const savedAnalysisResult = useMemo(() => savedOandaSnapshot ? parseAnalysis(savedOandaSnapshot.analysis) : null, [savedOandaSnapshot]);
   const savedCandleResult = useMemo(() => savedOandaSnapshot ? parseCandleDataset({ schemaVersion: '1.0.0', datasetId: `saved-oanda:${savedOandaSnapshot.instrument}:${savedOandaSnapshot.h4SourceCandleTime ?? 'unavailable'}`, description: 'Saved immutable OANDA H4 analysis snapshot.', isSynthetic: false, timezone: 'America/Toronto', instrument: savedOandaSnapshot.instrument, timeframe: 'H4', candles: [...(savedOandaSnapshot.candles as unknown[]), ...(liveOpenCandle ? [liveOpenCandle] : [])] }) : null, [savedOandaSnapshot, liveOpenCandle]);
   const activeAnalysis = savedOandaSnapshot ? (savedAnalysisResult?.success ? savedAnalysisResult.analysis : null) : dashboardAnalysis;
@@ -70,6 +71,18 @@ export default function App({
       active = false;
     };
   }, [serviceClient]);
+
+  useEffect(() => {
+    if (serviceAvailability !== 'available' || !serviceClient.checkOandaStatus) return;
+    let active = true;
+    setOandaStatus('checking');
+    serviceClient.checkOandaStatus().then((status) => {
+      if (active) setOandaStatus(status);
+    });
+    return () => {
+      active = false;
+    };
+  }, [serviceAvailability, serviceClient]);
 
   useEffect(() => {
     if (!savedOandaSnapshot || !serviceClient.subscribeOandaLiveH4) return;
@@ -168,6 +181,7 @@ export default function App({
           liveObservationPrice={livePrice}
           onOpenOandaPreview={() => void loadOandaPreview()}
           savedMetadata={savedOandaSnapshot ? { provenance: `OANDA ${savedOandaSnapshot.environment.toUpperCase()}`, sourceTime: savedOandaSnapshot.h4SourceCandleTime, latestPrice: livePrice, liveStatus } : undefined}
+          oandaStatus={oandaStatus ?? undefined}
         />
       ) : null}
     </AppShell>

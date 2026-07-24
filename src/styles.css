@@ -251,6 +251,31 @@ a:focus-visible {
 .local-service-control__status--unavailable i,
 .local-service-control__status--malformed_response i { background: var(--negative); }
 
+.oanda-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.oanda-status-badge i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--neutral);
+}
+
+.oanda-status-badge--ready { color: var(--positive); }
+.oanda-status-badge--ready i { background: var(--positive); }
+.oanda-status-badge--partial { color: var(--warning); }
+.oanda-status-badge--partial i { background: var(--warning); }
+.oanda-status-badge--error { color: var(--negative); }
+.oanda-status-badge--error i { background: var(--negative); }
+
 .local-service-control button {
   min-height: 28px;
   padding: 4px 9px;

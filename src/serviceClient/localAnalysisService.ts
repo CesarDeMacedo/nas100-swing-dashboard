@@ -83,8 +83,15 @@ export type RunDetailResult =
   | { kind: 'failed'; message: string }
   | { kind: 'malformed_response'; message: string };
 
+export type OandaProviderStatus =
+  | { kind: 'configured'; environment: 'practice' | 'live'; configuredInstrument: boolean }
+  | { kind: 'unconfigured'; environment: 'practice' | 'live'; message: string }
+  | { kind: 'invalid'; message: string }
+  | { kind: 'unavailable'; message: string };
+
 export type LocalAnalysisServiceClient = {
   checkHealth: () => Promise<ServiceAvailability>;
+  checkOandaStatus?: () => Promise<OandaProviderStatus>;
   runManualFixture: () => Promise<ManualRunResult>;
   listRecentRuns: (limit: number) => Promise<HistoryResult>;
   getRunByKey: (runKey: string) => Promise<RunDetailResult>;
@@ -186,6 +193,26 @@ export function createLocalAnalysisServiceClient(baseUrl = serviceUrl()): LocalA
         return { kind: 'available' };
       } catch {
         return { kind: 'unavailable', message: 'Start the local analysis service to enable manual persistence.' };
+      }
+    },
+    async checkOandaStatus() {
+      try {
+        const response = await request('/providers/oanda/status');
+        const payload = await responseJson(response);
+        if (!response.ok || !payload || typeof payload !== 'object') return { kind: 'unavailable', message: 'OANDA configuration status is unavailable.' };
+        const status = payload as { state?: unknown; environment?: unknown; configuredInstrument?: unknown; message?: unknown };
+        if (status.state === 'configured' && (status.environment === 'practice' || status.environment === 'live')) {
+          return { kind: 'configured', environment: status.environment, configuredInstrument: status.configuredInstrument === true };
+        }
+        if (status.state === 'unconfigured' && (status.environment === 'practice' || status.environment === 'live')) {
+          return { kind: 'unconfigured', environment: status.environment, message: typeof status.message === 'string' ? status.message : 'OANDA credentials are not configured.' };
+        }
+        if (status.state === 'invalid') {
+          return { kind: 'invalid', message: typeof status.message === 'string' ? status.message : 'OANDA configuration is invalid.' };
+        }
+        return { kind: 'unavailable', message: 'OANDA configuration status is unavailable.' };
+      } catch {
+        return { kind: 'unavailable', message: 'OANDA configuration status is unavailable.' };
       }
     },
     async runManualFixture() {

@@ -1,8 +1,9 @@
 import type { Analysis } from '../domain/analysis';
 import { formatTimeframeLabel } from '../lib/format';
 import { formatPrice } from '../lib/format';
-import type { ManualRunResult, ServiceAvailability } from '../serviceClient/localAnalysisService';
+import type { ManualRunResult, OandaProviderStatus, ServiceAvailability } from '../serviceClient/localAnalysisService';
 import { LocalServiceControl } from './LocalServiceControl';
+import { OandaStatusBadge } from './OandaStatusBadge';
 
 type DashboardHeaderProps = Pick<Analysis, 'displayName' | 'instrument' | 'timeframe'> & {
   serviceAvailability?: 'checking' | ServiceAvailability['kind'];
@@ -16,9 +17,10 @@ type DashboardHeaderProps = Pick<Analysis, 'displayName' | 'instrument' | 'timef
   onOpenOandaPreview?: () => void;
   liveObservationStatus?: string | null;
   liveObservationPrice?: number | null;
+  oandaStatus?: 'checking' | OandaProviderStatus;
 };
 
-export function DashboardHeader({ displayName, instrument, timeframe, serviceAvailability, manualRunState, manualRunResult, onManualRun, onOpenHistory, savedOandaProvenance, savedSourceCandleTime, onReturnToMock, onOpenOandaPreview, liveObservationStatus, liveObservationPrice }: DashboardHeaderProps) {
+export function DashboardHeader({ displayName, instrument, timeframe, serviceAvailability, manualRunState, manualRunResult, onManualRun, onOpenHistory, savedOandaProvenance, savedSourceCandleTime, onReturnToMock, onOpenOandaPreview, liveObservationStatus, liveObservationPrice, oandaStatus }: DashboardHeaderProps) {
   const titleTimeframe = formatTimeframeLabel(timeframe);
 
   return (
@@ -38,6 +40,7 @@ export function DashboardHeader({ displayName, instrument, timeframe, serviceAva
         <LocalServiceControl availability={serviceAvailability} runState={manualRunState} result={manualRunResult ?? null} onRun={onManualRun} onOpenHistory={onOpenHistory} />
       ) : null}
       {!savedOandaProvenance && serviceAvailability === 'available' && onOpenOandaPreview ? <button type="button" onClick={onOpenOandaPreview}>OANDA chart preview</button> : null}
+      {!savedOandaProvenance && serviceAvailability === 'available' && oandaStatus ? <OandaStatusBadge status={oandaStatus} /> : null}
     </div>
   );
 }

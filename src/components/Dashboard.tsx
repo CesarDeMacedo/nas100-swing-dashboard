@@ -3,7 +3,7 @@ import { lazy, Suspense } from 'react';
 import type { SafeAnalysis } from '../domain/analysis';
 import type { CandleDatasetParseResult } from '../domain/candles';
 import type { DashboardState } from '../application/buildDashboardState';
-import type { ManualRunResult, ServiceAvailability } from '../serviceClient/localAnalysisService';
+import type { ManualRunResult, OandaProviderStatus, ServiceAvailability } from '../serviceClient/localAnalysisService';
 import { AnalysisSidebar } from './sidebar/AnalysisSidebar';
 import { DashboardHeader } from './DashboardHeader';
 import { MetricsFooter } from './MetricsFooter';
@@ -39,9 +39,10 @@ type DashboardProps = {
   liveObservationPrice?: number | null;
   onOpenOandaPreview?: () => void;
   savedMetadata?: { provenance: string; sourceTime: string | null; latestPrice: number | null; liveStatus: string | null };
+  oandaStatus?: 'checking' | OandaProviderStatus;
 };
 
-export function Dashboard({ analysis, candleResult, dashboardState, serviceAvailability, manualRunState, manualRunResult, onManualRun, historyOpen = false, history, historyDetail, selectedHistoryRunKey = null, onOpenHistory, onCloseHistory, onRefreshHistory, onSelectHistoryRun, onViewHistoryInDashboard, savedOandaProvenance, savedSourceCandleTime, onReturnToMock, liveObservationStatus, liveObservationPrice, onOpenOandaPreview, savedMetadata }: DashboardProps) {
+export function Dashboard({ analysis, candleResult, dashboardState, serviceAvailability, manualRunState, manualRunResult, onManualRun, historyOpen = false, history, historyDetail, selectedHistoryRunKey = null, onOpenHistory, onCloseHistory, onRefreshHistory, onSelectHistoryRun, onViewHistoryInDashboard, savedOandaProvenance, savedSourceCandleTime, onReturnToMock, liveObservationStatus, liveObservationPrice, onOpenOandaPreview, savedMetadata, oandaStatus }: DashboardProps) {
   const state = dashboardState;
 
   return (
@@ -62,6 +63,7 @@ export function Dashboard({ analysis, candleResult, dashboardState, serviceAvail
           liveObservationStatus={liveObservationStatus}
           liveObservationPrice={liveObservationPrice}
           onOpenOandaPreview={onOpenOandaPreview}
+          oandaStatus={oandaStatus}
         />
         <PrimaryActionBanner
           action={state?.action ?? analysis.action}

@@ -20,6 +20,29 @@ describe('localAnalysisService', () => {
     await expect(createLocalAnalysisServiceClient('http://service').checkHealth()).resolves.toMatchObject({ kind: 'malformed_response' });
   });
 
+  it('reports OANDA configured/unconfigured/invalid status without requiring credentials', async () => {
+    const client = createLocalAnalysisServiceClient('http://service');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ state: 'configured', environment: 'practice', configuredInstrument: true }), { status: 200 })));
+    await expect(client.checkOandaStatus?.()).resolves.toEqual({ kind: 'configured', environment: 'practice', configuredInstrument: true });
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ state: 'unconfigured', environment: 'practice', configuredInstrument: false, message: 'OANDA_ACCOUNT_ID and OANDA_API_TOKEN are required before provider verification.' }), { status: 200 })));
+    await expect(client.checkOandaStatus?.()).resolves.toEqual({ kind: 'unconfigured', environment: 'practice', message: 'OANDA_ACCOUNT_ID and OANDA_API_TOKEN are required before provider verification.' });
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ state: 'invalid', environment: null, message: 'OANDA_ENVIRONMENT must be "practice" or "live".' }), { status: 200 })));
+    await expect(client.checkOandaStatus?.()).resolves.toEqual({ kind: 'invalid', message: 'OANDA_ENVIRONMENT must be "practice" or "live".' });
+  });
+
+  it('never exposes credentials and falls back to unavailable for unreachable or malformed OANDA status', async () => {
+    const client = createLocalAnalysisServiceClient('http://service');
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')));
+    await expect(client.checkOandaStatus?.()).resolves.toEqual({ kind: 'unavailable', message: 'OANDA configuration status is unavailable.' });
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('not json', { status: 200 })));
+    const result = await client.checkOandaStatus?.();
+    expect(result?.kind).toBe('unavailable');
+    expect(JSON.stringify(result)).not.toMatch(/token|secret|account.?id/i);
+  });
+
   it('distinguishes saved, duplicate, and malformed manual runs', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(run), { status: 201 })));
     await expect(createLocalAnalysisServiceClient('http://service').runManualFixture()).resolves.toMatchObject({ kind: 'succeeded', run });
