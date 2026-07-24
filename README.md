@@ -60,8 +60,12 @@ The shared candlestick chart supports mouse-wheel zoom, drag-to-pan, price-scale
 
 While `npm run service` is running, the in-process scheduler evaluates `America/Toronto` time every 15 seconds and runs only these one-minute post-close slots: Monday-Friday at 1:01 p.m., and Sunday-Friday at 9:01 p.m. It skips Saturday and the Sunday 1:01 p.m. slot.
 
-Each slot runs the same deterministic synthetic fixture pipeline used by the manual control. The latest H4 candle must be explicitly completed before an immutable completed report can be saved. SQLite run-key uniqueness makes repeated attempts idempotent, including a restart during the same scheduled minute. This is local-only synthetic validation; notifications and live market data are not implemented.
+Each slot runs the same deterministic synthetic fixture pipeline used by the manual control. The latest H4 candle must be explicitly completed before an immutable completed report can be saved. SQLite run-key uniqueness makes repeated attempts idempotent, including a restart during the same scheduled minute. This is local-only synthetic validation; live market data is not implemented for the fixture path.
 
 The dashboard remains driven by synthetic fixture data. The header control only saves the existing deterministic fixture analysis locally.
 
-Next planned milestones: cross-market confirmation, event-risk data, local notifications, PNG export, and Windows packaging (see `docs/IMPLEMENTATION_PLAN.md` phases 11-13, 15).
+Both the OANDA scheduler and the manual OANDA run now fetch live cross-market H4 confirmation for US500, US30, and Russell 2000 (same OANDA account, no separate provider) and classify each as confirming/contradicting/neutral against NAS100's own H4 structure; event-risk data remains unavailable, so BUY/SELL stays blocked regardless. Scheduler outcomes (`created`/`blocked`/`failed`) trigger a local, informational-only OS notification via `node-notifier` — see `src/service/schedulerNotifications.ts`.
+
+`node-notifier` pulls in a transitive `uuid` dependency flagged by `npm audit` (moderate severity) for a buffer-bounds issue that only applies when a caller passes an explicit `buf` argument to `uuid` — `node-notifier` never does this, it only generates random UUIDs. `npm audit fix --force` would downgrade `node-notifier` to `6.0.0` to resolve it, which is a real regression for an exposure that does not apply here, so this finding is accepted as-is rather than fixed.
+
+Next planned milestones: event-risk data, PNG export, and Windows packaging (see `docs/IMPLEMENTATION_PLAN.md` phases 11-13, 15).

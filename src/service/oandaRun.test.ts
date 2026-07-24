@@ -213,4 +213,25 @@ describe('manual OANDA analysis run', () => {
     expect(result.russell2000).toBeDefined();
     expect(result.us30).toBeUndefined();
   });
+
+  it('fetchCrossMarketH4 degrades a hung instrument to UNAVAILABLE within the timeout, instead of blocking forever', async () => {
+    const environment = { OANDA_ACCOUNT_ID: 'account-never-returned', OANDA_API_TOKEN: 'token-never-returned', OANDA_NAS100_INSTRUMENT: 'NAS100_USD' };
+    const configuration = parseOandaConfiguration(environment);
+    if (configuration.state !== 'configured') throw new Error('Expected configured OANDA test environment.');
+    const okPayload = JSON.stringify({ candles: [{ time: '2026-01-01T00:00:00.000Z', complete: true, mid: { o: '100', h: '101', l: '99', c: '100.5' } }] });
+    const fetcher: typeof fetch = async (input) => {
+      const url = input instanceof URL ? input.toString() : typeof input === 'string' ? input : input.url;
+      if (url.includes('US30_USD')) return new Promise(() => {}); // never resolves
+      return new Response(okPayload, { status: 200 });
+    };
+    const provider = new OandaProvider(configuration, fetcher);
+    const startedAtMs = Date.now();
+
+    const result = await fetchCrossMarketH4(provider, 10, 20);
+
+    expect(Date.now() - startedAtMs).toBeLessThan(1000);
+    expect(result.us500).toBeDefined();
+    expect(result.russell2000).toBeDefined();
+    expect(result.us30).toBeUndefined();
+  });
 });

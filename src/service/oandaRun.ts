@@ -65,18 +65,27 @@ const CROSS_MARKET_LABELS: Record<CrossMarketKey, 'US500' | 'US30' | 'RUSSELL_20
 
 export type CrossMarketH4Results = Partial<Record<CrossMarketKey, OandaH4CandleResult>>;
 
-/** Best-effort, single-attempt fetch of the three cross-market H4 series. Failures for an
- * individual instrument are swallowed here (that instrument classifies as UNAVAILABLE below)
- * rather than failing the whole NAS100 run — this data is supplementary, not safety-critical,
+/** Resolves to `undefined` on rejection *or* on timeout, unifying both into the same
+ * degradation path — OandaClient has no timeout of its own, so a hung request would
+ * otherwise never settle and block whatever awaits it. */
+const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T | undefined> =>
+  new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(undefined), ms);
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      () => { clearTimeout(timer); resolve(undefined); },
+    );
+  });
+
+/** Best-effort, single-attempt fetch of the three cross-market H4 series. Failure or timeout
+ * for an individual instrument degrades that instrument to UNAVAILABLE below rather than
+ * failing or blocking the whole NAS100 run — this data is supplementary, not safety-critical,
  * and does not participate in the scheduler's window-retry logic (src/service/scheduledOandaRun.ts). */
-export const fetchCrossMarketH4 = async (provider: OandaProvider, count = 250): Promise<CrossMarketH4Results> => {
+export const fetchCrossMarketH4 = async (provider: OandaProvider, count = 250, timeoutMs = 8000): Promise<CrossMarketH4Results> => {
   const entries = await Promise.all(
     (Object.entries(CROSS_MARKET_OANDA_SYMBOLS) as [CrossMarketKey, string][]).map(async ([key, symbol]) => {
-      try {
-        return [key, await provider.getH4Candles(symbol, count)] as const;
-      } catch {
-        return [key, undefined] as const;
-      }
+      const result = await withTimeout(provider.getH4Candles(symbol, count), timeoutMs);
+      return [key, result] as const;
     }),
   );
   return Object.fromEntries(entries.filter(([, result]) => result !== undefined)) as CrossMarketH4Results;
