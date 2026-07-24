@@ -94,11 +94,11 @@ Safety enforcement converts structurally valid but unsafe BUY/SELL input to WAIT
 
 ## Unresolved decisions
 
-- Select a licensed NAS100 and proxy-market data provider, including symbol mapping, licensing, rate limits, and historical access.
-- Define thresholds for “acceptable location,” cross-market alignment, ATR distance, first-retest rules, event blocking, and data freshness age.
+- NAS100 itself is resolved (OANDA v20, read-only). Select a licensed proxy-market/cross-market data source (US500, US30, Russell 2000), including symbol mapping, licensing, rate limits, and historical access.
+- Location and entry-trigger ATR thresholds are resolved (Phase 6B: 0.35 ATR zone/EMA tolerance, 0.05 ATR trigger, 0.25 ATR stop buffer; Phase 5B: 0.10 ATR breakout buffer). Still open: cross-market alignment rules, first-retest rules, event-blocking rules, and data-freshness age thresholds — all depend on the cross-market/event-risk provider above.
 - Select macro and event-risk data sources for the first live release.
 - Define outcome labels and methodology for historical setup evaluation/backtesting.
-- Select Windows notification adapter and packaging technology after proof-of-concept evidence.
+- Select Windows notification adapter and packaging technology after proof-of-concept evidence (see ADR-011, still unresolved).
 # Current product boundary
 
 The implementation remains analysis-only and local-first. OANDA is read-only with server-side credentials; there is no browser-to-OANDA connection or trade execution. H4 and Daily inputs are separate, completed-candle safety is authoritative, saved OANDA reports are immutable, and Chart Preview is on-demand only. The fixture scheduler remains the default; OANDA scheduling is opt-in. Cross-market/event-risk feeds are unavailable, and live OANDA observation remains experimental pending lifecycle tests.

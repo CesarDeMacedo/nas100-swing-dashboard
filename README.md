@@ -44,7 +44,7 @@ OANDA data is not connected to the dashboard or scheduler. Manual OANDA reports 
 
 `POST /runs/manual-oanda` requests 250 OANDA midpoint H4 candles and 250 Daily candles, keeping the completed datasets separate: H4 serves structure and decisions; Daily serves Daily Regime only. Open candles are excluded and both source timestamps are saved with the immutable local report. It is manual and read-only; cross-market and event-risk data remain unavailable, so it cannot authorize an entry. The dashboard still defaults to mock data, the scheduler remains synthetic and unchanged, and no trades can be executed.
 
-New OANDA reports calculate deterministic completed-H4 support, resistance, preferred-entry, and informational invalidation levels with ATR-based buffers. Existing local reports remain immutable. Selecting an OANDA report in the dashboard is a later milestone.
+New OANDA reports calculate deterministic completed-H4 support, resistance, preferred-entry, and informational invalidation levels with ATR-based buffers. Existing local reports remain immutable. Saved OANDA reports can be opened from Analysis History in the dashboard (see below).
 
 Saved OANDA reports that include a display snapshot can be reviewed in the dashboard as historical saved analysis, not live streaming. Mock data remains the default after refresh; the scheduler and automatic OANDA loading remain unchanged.
 
@@ -64,4 +64,4 @@ Each slot runs the same deterministic synthetic fixture pipeline used by the man
 
 The dashboard remains driven by synthetic fixture data. The header control only saves the existing deterministic fixture analysis locally.
 
-Next planned milestone: scheduled runs and market-data provider evaluation.
+Next planned milestones: cross-market confirmation, event-risk data, local notifications, PNG export, and Windows packaging (see `docs/IMPLEMENTATION_PLAN.md` phases 11-13, 15).

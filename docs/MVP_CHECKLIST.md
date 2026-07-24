@@ -7,7 +7,7 @@
 - [x] On-demand read-only OANDA H4 Chart Preview.
 - [x] Chart zoom, pan, price-scale adjustment, pinch zoom, double-click reset, and explicit Reset view.
 - [x] Optional OANDA scheduler mode remains explicitly opt-in; fixture remains the default.
-- [ ] Experimental live OANDA observation lifecycle is not yet fully validated.
+- [x] Experimental live OANDA observation lifecycle is validated: shared-subscriber, reconnect/backoff, H4 rollover, saved-candle immutability, and saved-report invariance all have passing regression tests (`src/service/liveStream.test.ts`). The feature remains opt-in and is still labeled experimental pending broader real-world use.
 
 ## Foundation
 
@@ -31,27 +31,27 @@
 - [x] Phase 3: Enums, timestamps, zones, data health, event risk, cross-market context, settings, and score breakdown have centralized runtime contracts.
 - [x] Phase 3: Normalization canonicalizes representation without inventing price, score, indicator, or candle-completion facts.
 - [x] Phase 3: Open candle, stale data, invalid health, missing event risk, sub-2.0 R:R, and missing-target input cannot authorize BUY or SELL.
-- [ ] Phase 4: EMA, RSI, ATR, and insufficient-history behavior have known-value tests.
-- [ ] Phase 5: Daily regime and H4 structure classification return evidence and reason codes.
-- [ ] Phase 6: Completed-candle protection prevents BUY and SELL from an open H4 candle.
-- [ ] Phase 6: Provider-confirmed closed status is required after each 13:01 and 21:01 `America/Toronto` scheduled run.
-- [ ] Phase 6: Stale market data defaults to NO TRADE.
-- [ ] Phase 6: Missing macro or event-risk data defaults to WAIT or NO TRADE.
-- [ ] Phase 6: Patience Filter blocks action independently of Setup Score.
-- [ ] Phase 6: Estimated R:R below 2:1 blocks BUY and SELL.
-- [ ] Phase 7: Setup Score category totals are reproducible, capped, and cannot override a hard gate.
-- [ ] Phase 7: Grade bands match D/C/C+/B/A/A+ approved thresholds.
-- [ ] Phase 7: A score-70+ WAIT state may show a premium setup card without authorizing entry.
+- [x] Phase 4: EMA, RSI, ATR, and insufficient-history behavior have known-value tests (`src/domain/indicators.test.ts`, `indicatorSnapshot.test.ts`).
+- [x] Phase 5: Daily regime and H4 structure classification return evidence and reason codes (`src/domain/dailyRegime.test.ts`, `h4Structure.test.ts`, `technicalContext.test.ts`).
+- [x] Phase 6: Completed-candle protection prevents BUY and SELL from an open H4 candle (`src/domain/patienceFilter.test.ts`, `strategyDecision.test.ts`, enforced again at the OANDA boundary in `src/service/oandaRun.test.ts`).
+- [x] Phase 6: Provider-confirmed closed status is required after each 13:01 and 21:01 `America/Toronto` scheduled run (open candles excluded end to end; see `src/service/oandaRun.test.ts`, `src/service/scheduler/fixtureScheduler.test.ts`).
+- [x] Phase 6: Stale market data defaults to NO TRADE (`src/domain/patienceFilter.test.ts`, `src/domain/analysis.test.ts`).
+- [x] Phase 6: Missing macro or event-risk data defaults to WAIT or NO TRADE (`src/domain/patienceFilter.test.ts`, `src/domain/strategyDecision.test.ts`).
+- [x] Phase 6: Patience Filter blocks action independently of Setup Score (`src/domain/patienceFilter.test.ts`, `scoredDecision.test.ts`).
+- [x] Phase 6: Estimated R:R below 2:1 blocks BUY and SELL (`src/domain/tradePlan.test.ts`, `src/domain/patienceFilter.test.ts`).
+- [x] Phase 7: Setup Score category totals are reproducible, capped, and cannot override a hard gate (`src/domain/setupScore.test.ts`).
+- [x] Phase 7: Grade bands match D/C/C+/B/A/A+ approved thresholds (`src/domain/setupScore.test.ts`).
+- [x] Phase 7: A score-70+ WAIT state may show a premium setup card without authorizing entry (`src/domain/scoredDecision.test.ts`).
 
 ## Report, scheduler, and history
 
-- [ ] Phase 8: Dashboard and report have automated parity tests for action, score, prices, levels, and guidance.
-- [ ] Phase 8: Position sizing remains explicitly illustrative and cannot execute a trade.
-- [ ] Phase 9: Manual and scheduled runs share one analysis path.
-- [ ] Phase 9: Scheduled runs are deduplicated by completed candle and recorded.
-- [ ] Phase 9: Priority runs occur at 13:01 and 21:01 `America/Toronto`.
-- [ ] Phase 10: History is stored locally with immutable report JSON and queryable summaries.
-- [ ] Phase 10: SQLite migrations and restart persistence tests pass.
+- [x] Phase 8: Dashboard and report have automated parity tests for action, score, prices, levels, and guidance (`src/application/buildSwingReport.test.ts`).
+- [x] Phase 8: Position sizing remains explicitly illustrative and cannot execute a trade (no execution capability exists anywhere in the codebase; see ADR-008).
+- [x] Phase 9: Manual and scheduled runs share one analysis path (`src/service/server.ts` scheduler `run` callback calls the same `executeManualOandaAnalysis`/`runSyntheticFixtureAnalysis` used by the manual routes).
+- [x] Phase 9: Scheduled runs are deduplicated by completed candle and recorded (`src/service/scheduler/fixtureScheduler.test.ts`, run-key uniqueness in `src/persistence/analysisRepository.test.ts`).
+- [x] Phase 9: Priority runs occur at 13:01 and 21:01 `America/Toronto` (`src/service/scheduler/fixtureScheduler.test.ts`, including DST-boundary cases).
+- [ ] Phase 10: History is stored locally with immutable report JSON and queryable summaries. SQLite storage and the `GET /runs`/`GET /runs/:runKey` query API are implemented and tested; a dedicated history search/filter screen and retention policy are not yet built (tracked as a follow-up).
+- [x] Phase 10: SQLite migrations and restart persistence tests pass (`src/persistence/analysisRepository.test.ts`).
 
 ## Local product operations
 

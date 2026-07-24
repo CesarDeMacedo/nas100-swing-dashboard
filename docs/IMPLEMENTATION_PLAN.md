@@ -2,7 +2,7 @@
 
 ## Current implementation boundary
 
-Manual OANDA analysis, immutable saved display snapshots, saved-dashboard review, Chart Preview, and optional fixture-default/OANDA-opt-in scheduling are implemented. H4 and Daily inputs remain separate and completed-candle safety is required. Chart navigation preserves the user viewport until explicit Reset view. Cross-market and event-risk data remain unavailable. Live OANDA observation is experimental; shared-subscriber, reconnect, rollover, and saved-report invariance lifecycle testing remains unfinished. The browser never connects directly to OANDA.
+Manual OANDA analysis, immutable saved display snapshots, saved-dashboard review, Chart Preview, and optional fixture-default/OANDA-opt-in scheduling are implemented. H4 and Daily inputs remain separate and completed-candle safety is required. Chart navigation preserves the user viewport until explicit Reset view. Cross-market and event-risk data remain unavailable. Live OANDA observation remains experimental (opt-in, not the default), but shared-subscriber, reconnect/backoff, H4 rollover, saved-candle immutability, and saved-report invariance lifecycle tests are now complete (`src/service/liveStream.test.ts`). The browser never connects directly to OANDA.
 
 Each phase is an independently reviewable request. Do not start the next phase without user approval of the current stop point.
 
@@ -235,7 +235,7 @@ Read-only OANDA v20 foundation is implemented but remains isolated from broader 
 
 Manual OANDA analysis is implemented as a separate `POST /runs/manual-oanda` path. It requests 250 midpoint H4 candles and 250 Daily candles, excludes all open candles, and keeps H4 structure/decision inputs separate from Daily Regime inputs. Both source timestamps are persisted with the immutable local report, while H4 remains the run identity. The path is GET-only toward OANDA and manual only; no dashboard or scheduler integration exists. Cross-market and event-risk inputs are explicitly unavailable, so the resulting report cannot authorize an entry. No trade execution exists.
 
-New manual OANDA reports derive deterministic support, resistance, preferred-entry, and informational invalidation levels from completed H4 confirmed swings with centralized ATR buffers. Historical reports are not changed. Dashboard selection of an OANDA report remains deferred.
+New manual OANDA reports derive deterministic support, resistance, preferred-entry, and informational invalidation levels from completed H4 confirmed swings with centralized ATR buffers. Historical reports are not changed. Dashboard selection of a saved OANDA report is implemented (see below).
 
 Saved OANDA reports with a non-sensitive display snapshot can now be opened from History in the existing dashboard layout for the current browser session. This is historical review only: mock data remains the refresh default, and neither the scheduler nor browser starts OANDA loading automatically.
 

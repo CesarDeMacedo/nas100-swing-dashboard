@@ -4,7 +4,7 @@
 
 The application is local-first and analysis-only. React/Vite/TypeScript renders a mock-default dashboard while the Node service owns read-only OANDA access and SQLite immutable reports. OANDA credentials remain server-side. Manual OANDA analysis uses separate completed H4 and Daily inputs: Daily is for Daily Regime, H4 is for structure and decisions. Saved reports include non-sensitive immutable display snapshots and can be opened from Analysis History. Chart Preview is on-demand and read-only. The scheduler is in-process, defaults to fixture mode, and OANDA mode is explicit opt-in. Cross-market and event-risk feeds are unavailable. The browser never connects to OANDA.
 
-The candlestick chart supports zoom, horizontal pan, price-scale adjustment, pinch zoom, double-click scale reset, and explicit Reset view. Its instance is stable for a chart identity; live/overlay updates update the series without fitting or replacing the user viewport. Experimental live observation is not approved as reliable real-time; lifecycle coverage for subscribers, reconnect, rollover, and saved-report invariance remains incomplete.
+The candlestick chart supports zoom, horizontal pan, price-scale adjustment, pinch zoom, double-click scale reset, and explicit Reset view. Its instance is stable for a chart identity; live/overlay updates update the series without fitting or replacing the user viewport. Live observation remains an opt-in, experimental feature (not the default); lifecycle coverage for shared subscribers, reconnect/backoff, H4 rollover, saved-candle immutability, and saved-report invariance is now complete (`src/service/liveStream.test.ts`).
 
 ## System overview
 

@@ -58,17 +58,15 @@ Future agents must run `git status` and inspect the diff before changing anythin
 
 # Experimental Live-Price Feature
 
-The live OANDA feature is experimental and is not approved as complete. Its intended design is a server-side OANDA pricing stream relayed to the browser through local SSE. It may update only an open H4 visual candle and must never modify saved report values or strategy decisions. Required remaining work includes robust lifecycle tests for shared subscribers, reconnect, H4 rollover, saved-candle immutability, and saved-report invariance. Do not claim reliable real-time behavior until those tests are complete.
+The live OANDA feature is opt-in and still labeled experimental. Its design is a server-side OANDA pricing stream relayed to the browser through local SSE. It updates only an open H4 visual candle and never modifies saved report values or strategy decisions. Lifecycle tests for shared subscribers, reconnect/backoff, H4 rollover, saved-candle immutability, and saved-report invariance are complete (`src/service/liveStream.test.ts`); two real bugs (late-subscriber replay, reconnect-backoff bypass) were found and fixed during that work.
 
 # Immediate Next Steps
 
-1. After the next H4 close, create a new manual OANDA report and verify `alreadyExists: false`.
-2. Open that OANDA record through Analysis History → View in dashboard.
-3. Confirm real saved OANDA candles, calculated levels, provenance, and source candle time.
-4. Keep default mock behavior unchanged until the saved OANDA view is validated.
-5. Complete experimental live-stream lifecycle tests before relying on real-time chart behavior.
-6. Only after validation, consider explicitly enabling OANDA scheduler mode.
-7. Future milestones are cross-market confirmation, event-risk data, notifications, packaging, and optional AI narrative; all remain out of scope for now.
+Steps 1-5 of the original validation sequence (manual OANDA report after H4 close, saved-view review, mock-default regression check, live-stream lifecycle tests) are complete. Standing items:
+
+1. Enabling OANDA scheduler mode in production remains an explicit, separate decision — not advanced without direct approval.
+2. Future milestones are cross-market confirmation, event-risk data, notifications, PNG export, Windows packaging, and optional AI narrative (`docs/IMPLEMENTATION_PLAN.md` phases 11-13, 15-16) — all remain out of scope until explicitly approved.
+3. A batch of smaller improvements (test coverage, doc hygiene, live-stream structural cleanup, data-health states, history screen, PNG export) may be in progress or completed under separate approval — check recent commits and `git log` rather than assuming this file is exhaustive.
 
 # Git Workflow
 
