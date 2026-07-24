@@ -117,4 +117,43 @@ describe('AnalysisRepository', () => {
       'C:\\Users\\example\\AppData\\Local\\NAS100 Swing Dashboard\\nas100-swing-dashboard.sqlite',
     );
   });
+
+  it('persists an explicit triggeredBy for completed and non-completed runs', () => {
+    const repository = createRepository();
+    const scheduled = repository.saveCompletedRun({ ...completedRun('scheduled-001'), triggeredBy: 'scheduler' }, currentReport());
+    const manual = repository.saveNonCompletedRun({ ...completedRun('manual-001'), status: 'BLOCKED', triggeredBy: 'user', errorMessage: 'Latest candle is open.' });
+
+    expect(scheduled.triggeredBy).toBe('scheduler');
+    expect(manual.triggeredBy).toBe('user');
+    expect(repository.getRunByKey(scheduled.runKey)?.run.triggeredBy).toBe('scheduler');
+    repository.close();
+  });
+
+  it('defaults triggeredBy to null when not supplied, without affecting existing runs', () => {
+    const repository = createRepository();
+    const stored = repository.saveCompletedRun(completedRun(), currentReport());
+
+    expect(stored.triggeredBy).toBeNull();
+    expect(repository.getRunByKey(stored.runKey)?.run.triggeredBy).toBeNull();
+    repository.close();
+  });
+
+  it('adds the triggered_by column additively on reopen without touching existing run data', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'nas100-persistence-'));
+    temporaryDirectories.push(directory);
+    const path = join(directory, 'history.sqlite');
+    const repository = new AnalysisRepository(path);
+    const stored = repository.saveCompletedRun(completedRun(), currentReport());
+    repository.close();
+
+    // Reopening re-runs schema setup (including the additive ALTER TABLE) against an
+    // already-populated database — this must be idempotent and must not alter the
+    // previously persisted row's values.
+    const reopened = new AnalysisRepository(path);
+    const rehydrated = reopened.getRunByKey(stored.runKey);
+
+    expect(rehydrated?.run).toEqual(stored);
+    expect(rehydrated?.run.triggeredBy).toBeNull();
+    reopened.close();
+  });
 });

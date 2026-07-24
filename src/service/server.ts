@@ -199,13 +199,13 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
       if (schedulerProvider === 'oanda') {
         if (!oandaProvider || !oandaConfiguration.nas100Instrument) return { outcome: 'failed', runKey: 'oanda:unconfigured', message: 'OANDA scheduler requires configured credentials and an explicit instrument.' };
         try {
-          const result = await executeManualOandaAnalysis(repository, oandaProvider, oandaConfiguration.nas100Instrument);
+          const result = await executeManualOandaAnalysis(repository, oandaProvider, oandaConfiguration.nas100Instrument, 'scheduler');
           return { outcome: result.outcome, runKey: result.run.runKey, message: result.message };
         } catch (cause) {
           return { outcome: 'failed', runKey: 'oanda:request-failed', message: cause instanceof Error ? cause.message : 'Scheduled OANDA analysis could not be completed.' };
         }
       }
-      const result = runSyntheticFixtureAnalysis(repository);
+      const result = runSyntheticFixtureAnalysis(repository, undefined, 'scheduler');
       return { outcome: result.outcome, runKey: result.run.runKey, message: result.message };
     },
   });

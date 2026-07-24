@@ -179,6 +179,13 @@ describe('local manual-run service', () => {
     expect(history.runs[0].run.status).toBe('COMPLETED');
   });
 
+  it('marks a manually-triggered fixture run as user-triggered', async () => {
+    const service = await startService();
+    const manual = await fetch(`${service.baseUrl}/runs/manual-fixture`, { method: 'POST' }).then((response) => response.json());
+    const stored = await fetch(`${service.baseUrl}/runs/${encodeURIComponent(manual.runKey)}`).then((response) => response.json());
+    expect(stored.run.triggeredBy).toBe('user');
+  });
+
   it('lists and retrieves the immutable stored report', async () => {
     const service = await startService();
     const created = await fetch(`${service.baseUrl}/runs/manual-fixture`, { method: 'POST' }).then((response) => response.json());

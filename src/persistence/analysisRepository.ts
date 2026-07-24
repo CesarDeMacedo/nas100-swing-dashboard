@@ -4,9 +4,12 @@ import { dirname, join } from 'node:path';
 
 import type { SwingReport } from '../application/buildSwingReport';
 
-export const PERSISTENCE_SCHEMA_VERSION = 1;
+export const PERSISTENCE_SCHEMA_VERSION = 2;
 
 export type AnalysisRunStatus = 'COMPLETED' | 'BLOCKED' | 'FAILED';
+
+/** Distinguishes a user-initiated run (manual button click) from a scheduler-initiated one. Optional and nullable: rows persisted before this field existed have no value and are never rewritten. */
+export type AnalysisRunTrigger = 'user' | 'scheduler';
 
 export type AnalysisRunInput = {
   id: string;
@@ -16,6 +19,7 @@ export type AnalysisRunInput = {
   status: AnalysisRunStatus;
   source: 'manual' | 'fixture';
   errorMessage?: string | null;
+  triggeredBy?: AnalysisRunTrigger | null;
 };
 
 export type StoredAnalysisRun = AnalysisRunInput & {
@@ -38,6 +42,7 @@ type RunRow = {
   error_message: string | null;
   report_id: string | null;
   persisted_at: string;
+  triggered_by: AnalysisRunTrigger | null;
 };
 
 type ReportRow = {
@@ -87,6 +92,18 @@ const createSchema = (database: DatabaseSync) => {
       ON analysis_runs(completed_at DESC);
 
     INSERT OR IGNORE INTO schema_migrations (version, applied_at)
+      VALUES (1, '${new Date().toISOString()}');
+  `);
+
+  const columns = database.prepare('PRAGMA table_info(analysis_runs)').all() as Array<{ name: string }>;
+  if (!columns.some((column) => column.name === 'triggered_by')) {
+    database.exec(`
+      ALTER TABLE analysis_runs ADD COLUMN triggered_by TEXT CHECK (triggered_by IN ('user', 'scheduler') OR triggered_by IS NULL);
+    `);
+  }
+
+  database.exec(`
+    INSERT OR IGNORE INTO schema_migrations (version, applied_at)
       VALUES (${PERSISTENCE_SCHEMA_VERSION}, '${new Date().toISOString()}');
   `);
 };
@@ -99,6 +116,7 @@ const toStoredRun = (row: RunRow): StoredAnalysisRun => ({
   status: row.status,
   source: row.source,
   errorMessage: row.error_message,
+  triggeredBy: row.triggered_by,
   reportId: row.report_id,
   persistedAt: row.persisted_at,
 });
@@ -152,8 +170,8 @@ export class AnalysisRepository {
       this.database
         .prepare(
           `INSERT INTO analysis_runs (
-            id, run_key, started_at, completed_at, status, source, error_message, report_id, persisted_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            id, run_key, started_at, completed_at, status, source, error_message, report_id, persisted_at, triggered_by
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           run.id,
@@ -165,6 +183,7 @@ export class AnalysisRepository {
           run.errorMessage ?? null,
           reportId,
           persistedAt,
+          run.triggeredBy ?? null,
         );
       this.database.exec('COMMIT');
     } catch (error) {
@@ -175,6 +194,7 @@ export class AnalysisRepository {
     return {
       ...run,
       errorMessage: run.errorMessage ?? null,
+      triggeredBy: run.triggeredBy ?? null,
       reportId,
       persistedAt,
     };
@@ -189,8 +209,8 @@ export class AnalysisRepository {
     this.database
       .prepare(
         `INSERT INTO analysis_runs (
-          id, run_key, started_at, completed_at, status, source, error_message, report_id, persisted_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
+          id, run_key, started_at, completed_at, status, source, error_message, report_id, persisted_at, triggered_by
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
       )
       .run(
         run.id,
@@ -201,9 +221,10 @@ export class AnalysisRepository {
         run.source,
         run.errorMessage ?? null,
         persistedAt,
+        run.triggeredBy ?? null,
       );
 
-    return { ...run, errorMessage: run.errorMessage ?? null, reportId: null, persistedAt };
+    return { ...run, errorMessage: run.errorMessage ?? null, triggeredBy: run.triggeredBy ?? null, reportId: null, persistedAt };
   }
 
   public listHistory(limit = 50): AnalysisHistoryItem[] {

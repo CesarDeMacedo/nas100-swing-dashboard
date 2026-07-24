@@ -5,7 +5,7 @@ import { buildSwingReport, SWING_REPORT_VERSION, type SwingReport } from '../app
 import { classifyDailyRegime } from '../domain/dailyRegime';
 import { calculateMarketLevels, type MarketLevelDirection, type MarketLevels } from '../domain/marketLevels';
 import { buildTechnicalContext, mapCanonicalDailyRegimeToLegacy, type TechnicalContext } from '../domain/technicalContext';
-import { AnalysisRepository, type StoredAnalysisRun } from '../persistence/analysisRepository';
+import { AnalysisRepository, type AnalysisRunTrigger, type StoredAnalysisRun } from '../persistence/analysisRepository';
 import { OandaProvider } from '../providers/oanda/oandaProvider';
 import type { OandaDailyCandleResult, OandaH4CandleResult } from '../providers/oanda/types';
 import { AnalysisReportSchema, CandleDatasetSchema, type AnalysisReport, type Candle, type CandleDataset } from '../schemas';
@@ -227,7 +227,7 @@ export const oandaRunKey = (report: SwingReport, strategyVersion: string) =>
 
 const incompleteRunKey = (instrument: string) => ['oanda-v20', instrument, 'H4', 'unavailable', 'blocked', OANDA_STRATEGY_VERSION].join(':');
 
-export const runManualOandaAnalysis = (repository: AnalysisRepository, source: OandaH4CandleResult, dailySource = emptyDailyResult(source)): OandaRunResult => {
+export const runManualOandaAnalysis = (repository: AnalysisRepository, source: OandaH4CandleResult, dailySource = emptyDailyResult(source), triggeredBy: AnalysisRunTrigger = 'user'): OandaRunResult => {
   const startedAt = new Date().toISOString();
   const fetchedCandleCount = source.candles.length;
   const completedCandleCount = source.candles.filter((candle) => candle.isClosed).length;
@@ -248,7 +248,7 @@ export const runManualOandaAnalysis = (repository: AnalysisRepository, source: O
     const existing = repository.getRunByKey(runKey);
     if (existing) return { ...base, outcome: 'already_exists', run: existing.run, report: existing.report, message: 'No completed OANDA H4 candles are available.' };
     const run = repository.saveNonCompletedRun({
-      id: randomUUID(), runKey, startedAt, completedAt: new Date().toISOString(), status: 'BLOCKED', source: 'manual',
+      id: randomUUID(), runKey, startedAt, completedAt: new Date().toISOString(), status: 'BLOCKED', source: 'manual', triggeredBy,
       errorMessage: 'No completed OANDA H4 candles are available.',
     });
     return { ...base, outcome: 'blocked', run, report: null, message: run.errorMessage ?? undefined };
@@ -296,20 +296,20 @@ export const runManualOandaAnalysis = (repository: AnalysisRepository, source: O
     const existing = repository.getRunByKey(runKey);
     if (existing?.report) return { ...base, ...multiTimeframe, outcome: 'already_exists', run: existing.run, report: existing.report };
     const run = repository.saveCompletedRun({
-      id: randomUUID(), runKey, startedAt, completedAt: new Date().toISOString(), status: 'COMPLETED', source: 'manual',
+      id: randomUUID(), runKey, startedAt, completedAt: new Date().toISOString(), status: 'COMPLETED', source: 'manual', triggeredBy,
     }, report);
     return { ...base, ...multiTimeframe, outcome: 'created', run, report };
   } catch (cause) {
     const runKey = ['oanda-v20', source.instrument, 'H4', 'failed', OANDA_STRATEGY_VERSION, startedAt].join(':');
     const run = repository.saveNonCompletedRun({
-      id: randomUUID(), runKey, startedAt, completedAt: new Date().toISOString(), status: 'FAILED', source: 'manual',
+      id: randomUUID(), runKey, startedAt, completedAt: new Date().toISOString(), status: 'FAILED', source: 'manual', triggeredBy,
       errorMessage: cause instanceof Error ? cause.message : 'Manual OANDA analysis could not be completed.',
     });
     return { ...base, outcome: 'failed', run, report: null, message: run.errorMessage ?? undefined };
   }
 };
 
-export const executeManualOandaAnalysis = async (repository: AnalysisRepository, provider: OandaProvider, instrument: string) => {
+export const executeManualOandaAnalysis = async (repository: AnalysisRepository, provider: OandaProvider, instrument: string, triggeredBy: AnalysisRunTrigger = 'user') => {
   const [source, dailySource] = await Promise.all([provider.getH4Candles(instrument, 250), provider.getDailyCandles(instrument, 250)]);
-  return runManualOandaAnalysis(repository, source, dailySource);
+  return runManualOandaAnalysis(repository, source, dailySource, triggeredBy);
 };

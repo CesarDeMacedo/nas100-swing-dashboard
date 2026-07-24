@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { buildDashboardState } from '../application/buildDashboardState';
 import { buildSwingReport, type SwingReport } from '../application/buildSwingReport';
 import { currentAnalysisSource, currentCandleDatasetSource } from '../domain/fixtures';
-import { AnalysisRepository, type StoredAnalysisRun } from '../persistence/analysisRepository';
+import { AnalysisRepository, type AnalysisRunTrigger, type StoredAnalysisRun } from '../persistence/analysisRepository';
 import { AnalysisReportSchema, CandleDatasetSchema } from '../schemas';
 
 export type FixtureRunResult = {
@@ -22,6 +22,7 @@ const blockedRunKey = (instrument: string, timeframe: string, sourceCandleTime: 
 export const runSyntheticFixtureAnalysis = (
   repository: AnalysisRepository,
   sources = { analysis: currentAnalysisSource, candles: currentCandleDatasetSource },
+  triggeredBy: AnalysisRunTrigger = 'user',
 ): FixtureRunResult => {
   const startedAt = new Date().toISOString();
 
@@ -41,6 +42,7 @@ export const runSyntheticFixtureAnalysis = (
         completedAt: new Date().toISOString(),
         status: 'BLOCKED',
         source: 'fixture',
+        triggeredBy,
         errorMessage: 'Latest synthetic H4 candle is not completed.',
       });
       return { outcome: 'blocked', run, report: null, message: run.errorMessage ?? undefined };
@@ -61,6 +63,7 @@ export const runSyntheticFixtureAnalysis = (
         completedAt,
         status: 'COMPLETED',
         source: 'fixture',
+        triggeredBy,
       },
       report,
     );
@@ -75,6 +78,7 @@ export const runSyntheticFixtureAnalysis = (
       completedAt: new Date().toISOString(),
       status: 'FAILED',
       source: 'fixture',
+      triggeredBy,
       errorMessage: message,
     });
     return { outcome: 'failed', run, report: null, message };

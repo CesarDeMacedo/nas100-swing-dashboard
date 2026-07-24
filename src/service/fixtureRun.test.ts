@@ -28,6 +28,19 @@ const freshRepository = () => {
 };
 
 describe('runSyntheticFixtureAnalysis', () => {
+  it('defaults to a user-triggered run and honors an explicit scheduler trigger', () => {
+    const repository = freshRepository();
+
+    const manual = runSyntheticFixtureAnalysis(repository);
+    expect(manual.run.triggeredBy).toBe('user');
+    repository.close();
+
+    const schedulerRepository = freshRepository();
+    const scheduled = runSyntheticFixtureAnalysis(schedulerRepository, undefined, 'scheduler');
+    expect(scheduled.run.triggeredBy).toBe('scheduler');
+    schedulerRepository.close();
+  });
+
   it('creates a completed run and returns the existing one on repeat', () => {
     const repository = freshRepository();
 
