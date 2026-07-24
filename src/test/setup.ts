@@ -31,6 +31,7 @@ vi.mock('lightweight-charts', async (importOriginal) => {
         timeScale: vi.fn(() => timeScale),
         resize: vi.fn(),
         remove: vi.fn(),
+        takeScreenshot: vi.fn(() => document.createElement('canvas')),
       };
     }),
   };

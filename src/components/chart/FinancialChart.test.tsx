@@ -1,10 +1,12 @@
+import { createRef } from 'react';
+
 import { render } from '@testing-library/react';
 import { createChart } from 'lightweight-charts';
 import { vi } from 'vitest';
 
 import { parseCandleDataset } from '../../domain/candles';
 import { currentCandleDatasetSource } from '../../domain/fixtures';
-import { FinancialChart, chartNavigationOptions } from './FinancialChart';
+import { FinancialChart, chartNavigationOptions, type FinancialChartHandle } from './FinancialChart';
 
 describe('FinancialChart lifecycle', () => {
   it('enables zoom, pan, pinch, and scale reset without enabling wheel scrolling', () => {
@@ -45,5 +47,19 @@ describe('FinancialChart lifecycle', () => {
     unmount();
     expect(disconnect).toHaveBeenCalledOnce();
     expect(chart?.remove).toHaveBeenCalledOnce();
+  });
+
+  it('exposes an exportPng handle backed by the chart library\'s native takeScreenshot', () => {
+    const result = parseCandleDataset(currentCandleDatasetSource);
+    expect(result.success).toBe(true);
+    if (!result.success) return;
+
+    const ref = createRef<FinancialChartHandle>();
+    render(<FinancialChart ref={ref} candles={result.dataset.candles} zones={[]} priceLines={[]} accessibleLabel="Test NAS100 chart" />);
+    const chart = vi.mocked(createChart).mock.results.at(-1)?.value;
+
+    const canvas = ref.current?.exportPng();
+    expect(chart?.takeScreenshot).toHaveBeenCalled();
+    expect(canvas).toBeInstanceOf(HTMLCanvasElement);
   });
 });

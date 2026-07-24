@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 
 import type { SafeAnalysis } from '../../domain/analysis';
 import type { DashboardState } from '../../application/buildDashboardState';
@@ -8,8 +8,15 @@ import { ChartDecisionOverlay } from './ChartDecisionOverlay';
 import { ChartHeader } from './ChartHeader';
 import { ChartLegend } from './ChartLegend';
 import { ChartStatusOverlay } from './ChartStatusOverlay';
-import { FinancialChart } from './FinancialChart';
+import { FinancialChart, type FinancialChartHandle } from './FinancialChart';
 import { mapPriceLines, mapPriceZones, selectVisibleSavedLevels, type ChartPalette } from './chartAdapter';
+
+const downloadChartPng = (canvas: HTMLCanvasElement, instrument: string) => {
+  const link = document.createElement('a');
+  link.download = `${instrument.replace(/[^a-z0-9]+/gi, '-')}-h4-chart-${new Date().toISOString().replace(/[:.]/g, '-')}.png`;
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+};
 
 type CandlestickChartPanelProps = {
   analysis: SafeAnalysis;
@@ -40,6 +47,7 @@ function ValidCandlestickChart({
   savedMetadata?: { provenance: string; sourceTime: string | null; latestPrice: number | null; liveStatus: string | null };
 }) {
   const [resetKey, setResetKey] = useState(0);
+  const chartHandleRef = useRef<FinancialChartHandle>(null);
   const chartAnalysis = dashboardState
     ? ({
         ...analysis,
@@ -77,11 +85,16 @@ function ValidCandlestickChart({
         latestCandle={latestCandle}
         changePercent={analysis.changePercent}
         onResetView={() => setResetKey((key) => key + 1)}
+        onExportPng={() => {
+          const canvas = chartHandleRef.current?.exportPng();
+          if (canvas) downloadChartPng(canvas, analysis.instrument);
+        }}
         savedMetadata={savedMetadata}
       />
       <p className="chart-navigation-hint">Scroll to zoom · Drag to pan · Double-click scale to reset</p>
       <div className="chart-stage" data-testid="financial-chart-stage">
         <FinancialChart
+          ref={chartHandleRef}
           candles={dataset.candles}
           zones={zones}
           priceLines={priceLines}

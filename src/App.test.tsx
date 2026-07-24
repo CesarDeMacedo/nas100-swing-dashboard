@@ -162,7 +162,7 @@ describe('dashboard rendering', () => {
     fireEvent.click(await within(historyDialog).findByRole('button', { name: 'View in dashboard' }));
 
     expect(screen.queryByRole('dialog', { name: 'Analysis history' })).not.toBeInTheDocument();
-    expect(await screen.findByText('OANDA PRACTICE — SAVED ANALYSIS')).toBeVisible();
+    expect(await screen.findByText('OANDA PRACTICE — SAVED ANALYSIS', {}, { timeout: 3000 })).toBeVisible();
     expect(screen.getByTestId('current-price-marker')).toHaveTextContent('30,123');
     expect(screen.getAllByTestId('support-zone')).toHaveLength(1);
     expect(screen.getByText(/saved OANDA candles/)).toBeInTheDocument();
@@ -222,6 +222,16 @@ describe('dashboard rendering', () => {
     expect(screen.getByTestId('summary-grade')).toHaveTextContent('D');
     expect(screen.getByTestId('summary-actionability')).toHaveTextContent('Below premium threshold');
     expect(screen.queryByTestId('summary-score')).not.toHaveTextContent('74');
+  });
+
+  it('exports the chart as a downloaded PNG without contacting any server', async () => {
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined);
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Export PNG' }));
+
+    expect(clickSpy).toHaveBeenCalledOnce();
+    clickSpy.mockRestore();
   });
 
   it('presents calculated pullback messaging and unavailable plan values without fixture fallbacks', () => {

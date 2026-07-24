@@ -11,6 +11,7 @@ type ChartHeaderProps = {
   latestCandle?: Candle;
   changePercent: number;
   onResetView?: () => void;
+  onExportPng?: () => void;
   savedMetadata?: { provenance: string; sourceTime: string | null; latestPrice: number | null; liveStatus: string | null };
 };
 
@@ -22,6 +23,7 @@ export function ChartHeader({
   latestCandle,
   changePercent,
   onResetView,
+  onExportPng,
   savedMetadata,
 }: ChartHeaderProps) {
   return (
@@ -47,7 +49,7 @@ export function ChartHeader({
           {formatPercent(changePercent)}
         </strong>
       </div>
-      <div className="chart-header__controls"><DataFreshnessBadge freshness={freshness} provider={provider} />{onResetView ? <button type="button" onClick={onResetView}>Reset view</button> : null}</div>
+      <div className="chart-header__controls"><DataFreshnessBadge freshness={freshness} provider={provider} />{onResetView ? <button type="button" onClick={onResetView}>Reset view</button> : null}{onExportPng ? <button type="button" onClick={onExportPng}>Export PNG</button> : null}</div>
     </header>
   );
 }

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import {
   CandlestickSeries,
   ColorType,
@@ -29,7 +29,9 @@ type FinancialChartProps = {
 };
 
 type ChartSeries = { setData: (data: ReturnType<typeof toChartCandles>) => void; attachPrimitive: (primitive: PriceZoneLayer) => void; detachPrimitive: (primitive: PriceZoneLayer) => void; createPriceLine: (options: Record<string, unknown>) => IPriceLine; removePriceLine: (line: IPriceLine) => void };
-type ChartInstance = { timeScale: () => { setVisibleLogicalRange: (range: { from: number; to: number }) => void; fitContent: () => void }; addSeries: (...args: unknown[]) => ChartSeries; resize: (width: number, height: number) => void; remove: () => void };
+type ChartInstance = { timeScale: () => { setVisibleLogicalRange: (range: { from: number; to: number }) => void; fitContent: () => void }; addSeries: (...args: unknown[]) => ChartSeries; resize: (width: number, height: number) => void; remove: () => void; takeScreenshot: () => HTMLCanvasElement };
+
+export type FinancialChartHandle = { exportPng: () => HTMLCanvasElement | null };
 
 const lineStyleMap = {
   solid: LineStyle.Solid,
@@ -52,14 +54,14 @@ export const chartNavigationOptions = {
   handleScale: { mouseWheel: true, axisPressedMouseMove: true, axisDoubleClickReset: true, pinch: true },
 } as const;
 
-export function FinancialChart({
+export const FinancialChart = forwardRef<FinancialChartHandle, FinancialChartProps>(function FinancialChart({
   candles,
   zones,
   priceLines,
   accessibleLabel,
   resetKey = 0,
   chartIdentity = 'default',
-}: FinancialChartProps) {
+}, exportRef) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<ChartInstance | null>(null);
   const seriesRef = useRef<ChartSeries | null>(null);
@@ -188,6 +190,10 @@ export function FinancialChart({
     chartRef.current?.timeScale().fitContent();
   }, [resetKey]);
 
+  useImperativeHandle(exportRef, () => ({
+    exportPng: () => chartRef.current?.takeScreenshot() ?? null,
+  }), []);
+
   return (
     <div
       ref={containerRef}
@@ -197,4 +203,4 @@ export function FinancialChart({
       aria-label={accessibleLabel}
     />
   );
-}
+});
