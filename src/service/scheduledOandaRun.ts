@@ -4,11 +4,13 @@ import { h4Window } from '../domain/h4Window';
 import type { AnalysisRepository } from '../persistence/analysisRepository';
 import type { OandaProvider } from '../providers/oanda/oandaProvider';
 import type { OandaH4Candle } from '../providers/oanda/types';
+import { fetchForexFactoryEventRisk } from './forexFactoryEventRisk';
 import { fetchCrossMarketH4, OANDA_STRATEGY_VERSION, runManualOandaAnalysis, type OandaRunResult } from './oandaRun';
 
 export type ScheduledOandaRunOptions = {
   retryDelaysMs?: number[];
   now?: () => Date;
+  eventRiskFetcher?: typeof fetch;
 };
 
 const DEFAULT_RETRY_DELAYS_MS = [2000, 5000, 10000];
@@ -135,11 +137,11 @@ export const executeScheduledOandaAnalysis = async (
 
     const actualWindow = h4Window(latestCompleted.time);
     if (actualWindow === expectedCompletedWindow) {
-      // Cross-market confirmation is supplementary, not safety-critical: fetched here as a
-      // single best-effort attempt, outside the window-retry loop above (per-instrument
-      // failures just classify as UNAVAILABLE downstream, they never block or retry this run).
-      const crossMarketH4 = await fetchCrossMarketH4(provider);
-      return runManualOandaAnalysis(repository, source, dailySource, 'scheduler', crossMarketH4);
+      // Cross-market confirmation and event-risk are both supplementary, not safety-critical:
+      // fetched here as single best-effort attempts, outside the window-retry loop above
+      // (failures degrade to UNAVAILABLE downstream, they never block or retry this run).
+      const [crossMarketH4, eventRisk] = await Promise.all([fetchCrossMarketH4(provider), fetchForexFactoryEventRisk(options.eventRiskFetcher ?? fetch)]);
+      return runManualOandaAnalysis(repository, source, dailySource, 'scheduler', crossMarketH4, eventRisk ?? undefined);
     }
     if (actualWindow > expectedCompletedWindow) {
       return persistBlockedWindowRun(repository, instrument, startedAt, expectedCompletedWindow, latestCompleted.time, attempt + 1, 'window-advanced');

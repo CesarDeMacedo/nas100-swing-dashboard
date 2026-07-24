@@ -45,6 +45,10 @@ const dailyCandlePayload = { candles: [{ time: '2026-07-23T00:00:00.000Z', compl
 
 const crossMarketCandlePayload = { candles: [{ time: '2026-07-24T13:00:00.000Z', complete: true, mid: { o: '100', h: '101', l: '99', c: '100.5' } }] };
 
+// Never let a test hit the real Forex Factory feed — resolves fast with a 404, which
+// fetchForexFactoryEventRisk already treats as "unavailable" (falls back to the placeholder).
+const stubEventRiskFetcher: typeof fetch = async () => new Response('', { status: 404 });
+
 /** Routes H4 candle GETs for NAS100_USD through a scripted sequence of steps (one per call,
  * sequence padding at the end); Daily and cross-market (SPX500/US30/US2000) GETs always
  * succeed with a fixed candle, since those are supplementary and outside this module's
@@ -73,7 +77,7 @@ describe('executeScheduledOandaAnalysis', () => {
     const { fetcher, h4CallCount } = buildFetcher([{ kind: 'candle', time: EXPECTED_CANDLE_TIME }]);
     const repository = freshRepository();
 
-    const result = await executeScheduledOandaAnalysis(repository, configuredProvider(fetcher), 'NAS100_USD', { now: () => STARTED_AT, retryDelaysMs: [10, 10, 10] });
+    const result = await executeScheduledOandaAnalysis(repository, configuredProvider(fetcher), 'NAS100_USD', { now: () => STARTED_AT, retryDelaysMs: [10, 10, 10], eventRiskFetcher: stubEventRiskFetcher });
 
     expect(result.outcome).toBe('created');
     expect(result.report?.sourceCandleTime).toBe(EXPECTED_CANDLE_TIME);
@@ -85,7 +89,7 @@ describe('executeScheduledOandaAnalysis', () => {
     const { fetcher, h4CallCount } = buildFetcher([{ kind: 'error' }, { kind: 'candle', time: EXPECTED_CANDLE_TIME }]);
     const repository = freshRepository();
 
-    const result = await executeScheduledOandaAnalysis(repository, configuredProvider(fetcher), 'NAS100_USD', { now: () => STARTED_AT, retryDelaysMs: [10, 10, 10] });
+    const result = await executeScheduledOandaAnalysis(repository, configuredProvider(fetcher), 'NAS100_USD', { now: () => STARTED_AT, retryDelaysMs: [10, 10, 10], eventRiskFetcher: stubEventRiskFetcher });
 
     expect(result.outcome).toBe('created');
     expect(h4CallCount()).toBe(2);
@@ -96,7 +100,7 @@ describe('executeScheduledOandaAnalysis', () => {
     const { fetcher, h4CallCount } = buildFetcher([{ kind: 'candle', time: STALE_CANDLE_TIME }, { kind: 'candle', time: EXPECTED_CANDLE_TIME }]);
     const repository = freshRepository();
 
-    const result = await executeScheduledOandaAnalysis(repository, configuredProvider(fetcher), 'NAS100_USD', { now: () => STARTED_AT, retryDelaysMs: [10, 10, 10] });
+    const result = await executeScheduledOandaAnalysis(repository, configuredProvider(fetcher), 'NAS100_USD', { now: () => STARTED_AT, retryDelaysMs: [10, 10, 10], eventRiskFetcher: stubEventRiskFetcher });
 
     expect(result.outcome).toBe('created');
     expect(result.report?.sourceCandleTime).toBe(EXPECTED_CANDLE_TIME);
@@ -108,7 +112,7 @@ describe('executeScheduledOandaAnalysis', () => {
     const { fetcher, h4CallCount } = buildFetcher([{ kind: 'candle', time: STALE_CANDLE_TIME }]);
     const repository = freshRepository();
 
-    const result = await executeScheduledOandaAnalysis(repository, configuredProvider(fetcher), 'NAS100_USD', { now: () => STARTED_AT, retryDelaysMs: [10, 10] });
+    const result = await executeScheduledOandaAnalysis(repository, configuredProvider(fetcher), 'NAS100_USD', { now: () => STARTED_AT, retryDelaysMs: [10, 10], eventRiskFetcher: stubEventRiskFetcher });
 
     expect(result.outcome).toBe('blocked');
     expect(result.report).toBeNull();
@@ -124,7 +128,7 @@ describe('executeScheduledOandaAnalysis', () => {
     const { fetcher, h4CallCount } = buildFetcher([{ kind: 'candle', time: ADVANCED_CANDLE_TIME }, { kind: 'candle', time: EXPECTED_CANDLE_TIME }]);
     const repository = freshRepository();
 
-    const result = await executeScheduledOandaAnalysis(repository, configuredProvider(fetcher), 'NAS100_USD', { now: () => STARTED_AT, retryDelaysMs: [10, 10, 10] });
+    const result = await executeScheduledOandaAnalysis(repository, configuredProvider(fetcher), 'NAS100_USD', { now: () => STARTED_AT, retryDelaysMs: [10, 10, 10], eventRiskFetcher: stubEventRiskFetcher });
 
     expect(result.outcome).toBe('blocked');
     expect(result.report).toBeNull();
@@ -139,7 +143,7 @@ describe('executeScheduledOandaAnalysis', () => {
     const { fetcher, h4CallCount } = buildFetcher([{ kind: 'error' }, { kind: 'error' }, { kind: 'error' }]);
     const repository = freshRepository();
 
-    const result = await executeScheduledOandaAnalysis(repository, configuredProvider(fetcher), 'NAS100_USD', { now: () => STARTED_AT, retryDelaysMs: [10, 10] });
+    const result = await executeScheduledOandaAnalysis(repository, configuredProvider(fetcher), 'NAS100_USD', { now: () => STARTED_AT, retryDelaysMs: [10, 10], eventRiskFetcher: stubEventRiskFetcher });
 
     expect(result.outcome).toBe('failed');
     expect(result.report).toBeNull();
@@ -159,7 +163,7 @@ describe('executeScheduledOandaAnalysis', () => {
     const repository = freshRepository();
     const startedAtMs = Date.now();
 
-    await executeScheduledOandaAnalysis(repository, configuredProvider(fetcher), 'NAS100_USD', { now: () => STARTED_AT, retryDelaysMs: [200] });
+    await executeScheduledOandaAnalysis(repository, configuredProvider(fetcher), 'NAS100_USD', { now: () => STARTED_AT, retryDelaysMs: [200], eventRiskFetcher: stubEventRiskFetcher });
 
     expect(Date.now() - startedAtMs).toBeGreaterThanOrEqual(190);
     repository.close();

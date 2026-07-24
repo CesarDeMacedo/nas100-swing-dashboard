@@ -40,6 +40,9 @@ type LocalServiceOptions = {
   /** Test-only override for the scheduler's outcome notification, so tests never trigger a
    * real OS notification. Defaults to the real node-notifier-backed notifySchedulerOutcome. */
   notifySchedulerOutcome?: (result: SchedulerRunResult) => void;
+  /** Test-only override for the A2 event-risk (Forex Factory) fetch, so tests never make a
+   * real network call to that feed. Defaults to the global fetch. */
+  eventRiskFetch?: typeof fetch;
 };
 
 type ServiceHealth = {
@@ -138,7 +141,7 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
       if (!repository) throw new Error('Local persistence is unavailable.');
       if (schedulerProvider === 'oanda') {
         if (!oandaProvider || !oandaConfiguration.nas100Instrument) return { outcome: 'failed', runKey: 'oanda:unconfigured', message: 'OANDA scheduler requires configured credentials and an explicit instrument.' };
-        const result = await executeScheduledOandaAnalysis(repository, oandaProvider, oandaConfiguration.nas100Instrument, { retryDelaysMs: options.scheduledOandaRetryDelaysMs, now: options.schedulerNow });
+        const result = await executeScheduledOandaAnalysis(repository, oandaProvider, oandaConfiguration.nas100Instrument, { retryDelaysMs: options.scheduledOandaRetryDelaysMs, now: options.schedulerNow, eventRiskFetcher: options.eventRiskFetch });
         return { outcome: result.outcome, runKey: result.run.runKey, message: result.message };
       }
       const result = runSyntheticFixtureAnalysis(repository, undefined, 'scheduler');
@@ -247,7 +250,7 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
           return;
         }
         try {
-          const result = await executeManualOandaAnalysis(activeRepository, oandaProvider, oandaConfiguration.nas100Instrument);
+          const result = await executeManualOandaAnalysis(activeRepository, oandaProvider, oandaConfiguration.nas100Instrument, 'user', options.eventRiskFetch ?? fetch);
           if (!result.report) {
             error(response, 409, result.outcome === 'failed' ? 'OANDA_MANUAL_RUN_FAILED' : 'OANDA_NO_COMPLETED_CANDLES', result.message ?? 'Manual OANDA analysis could not be completed.');
             return;

@@ -8,7 +8,9 @@ import { buildTechnicalContext, mapCanonicalDailyRegimeToLegacy, type TechnicalC
 import { AnalysisRepository, type AnalysisRunTrigger, type StoredAnalysisRun } from '../persistence/analysisRepository';
 import { OandaProvider } from '../providers/oanda/oandaProvider';
 import type { OandaDailyCandleResult, OandaH4CandleResult } from '../providers/oanda/types';
-import { AnalysisReportSchema, CandleDatasetSchema, type AnalysisReport, type Candle, type CandleDataset } from '../schemas';
+import { AnalysisReportSchema, CandleDatasetSchema, type AnalysisReport, type Candle, type CandleDataset, type EventRisk } from '../schemas';
+import { fetchForexFactoryEventRisk } from './forexFactoryEventRisk';
+import { withTimeout } from './withTimeout';
 
 export const OANDA_STRATEGY_VERSION = '1.0.0';
 
@@ -64,18 +66,6 @@ type CrossMarketKey = keyof typeof CROSS_MARKET_OANDA_SYMBOLS;
 const CROSS_MARKET_LABELS: Record<CrossMarketKey, 'US500' | 'US30' | 'RUSSELL_2000'> = { us500: 'US500', us30: 'US30', russell2000: 'RUSSELL_2000' };
 
 export type CrossMarketH4Results = Partial<Record<CrossMarketKey, OandaH4CandleResult>>;
-
-/** Resolves to `undefined` on rejection *or* on timeout, unifying both into the same
- * degradation path — OandaClient has no timeout of its own, so a hung request would
- * otherwise never settle and block whatever awaits it. */
-const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T | undefined> =>
-  new Promise((resolve) => {
-    const timer = setTimeout(() => resolve(undefined), ms);
-    promise.then(
-      (value) => { clearTimeout(timer); resolve(value); },
-      () => { clearTimeout(timer); resolve(undefined); },
-    );
-  });
 
 /** Best-effort, single-attempt fetch of the three cross-market H4 series. Failure or timeout
  * for an individual instrument degrades that instrument to UNAVAILABLE below rather than
@@ -138,7 +128,7 @@ const asDatasetCandles = (candles: readonly { time: string; open: number; high: 
 
 const emptyDailyResult = (source: OandaH4CandleResult): OandaDailyCandleResult => ({ provider: source.provider, environment: source.environment, instrument: source.instrument, timeframe: 'D', candles: [] });
 
-export const buildOandaMultiTimeframeInputs = (h4Source: OandaH4CandleResult, dailySource: OandaDailyCandleResult, generatedAt = new Date().toISOString(), crossMarketH4: CrossMarketH4Results = {}): OandaReportInputs => {
+export const buildOandaMultiTimeframeInputs = (h4Source: OandaH4CandleResult, dailySource: OandaDailyCandleResult, generatedAt = new Date().toISOString(), crossMarketH4: CrossMarketH4Results = {}, eventRisk?: EventRisk[]): OandaReportInputs => {
   const completed = h4Source.candles.filter((candle) => candle.isClosed);
   const dailyCompleted = dailySource.candles.filter((candle) => candle.isClosed);
   const latest = completed.at(-1);
@@ -186,6 +176,22 @@ export const buildOandaMultiTimeframeInputs = (h4Source: OandaH4CandleResult, da
   const marketLevelDirection: MarketLevelDirection = technicalContext.canonicalH4Structure.startsWith('bullish') ? 'long' : technicalContext.canonicalH4Structure.startsWith('bearish') ? 'short' : 'none';
   const marketLevels = calculateMarketLevels(candles.candles, marketLevelDirection);
   const crossMarket = buildCrossMarketSnapshot(directionOf(technicalContext.canonicalH4Structure), crossMarketH4);
+  // undefined means "not fetched" (backward-compatible default, callers that predate A2) and
+  // falls back to the UNAVAILABLE placeholder below. An empty array is a genuine, distinct
+  // result — the feed was fetched successfully and found no relevant USD events this week —
+  // and must NOT be replaced by the placeholder, since downstream (buildDashboardState.ts)
+  // reads `eventRisk.every(status === 'AVAILABLE')`, which is vacuously true for [].
+  const eventRiskUnavailable = eventRisk === undefined;
+  const eventRiskEntries: EventRisk[] = eventRisk ?? [{
+    status: 'UNAVAILABLE',
+    severity: 'NONE',
+    eventName: 'Live event-risk feed unavailable',
+    eventTime: latest.time,
+    source: 'unavailable',
+    freshness: 'MISSING',
+    blocksEntry: false,
+    notes: ['No live macro or event-risk feed is integrated for this phase.'],
+  }];
   const analysis = AnalysisReportSchema.parse({
     schemaVersion: '1.0.0',
     strategyVersion: OANDA_STRATEGY_VERSION,
@@ -214,23 +220,14 @@ export const buildOandaMultiTimeframeInputs = (h4Source: OandaH4CandleResult, da
     ...(marketLevels.preferredEntryZone ? { preferredEntryZone: marketLevels.preferredEntryZone } : {}),
     ...(marketLevels.invalidationCandidate === null ? {} : { invalidation: marketLevels.invalidationCandidate }),
     targets: [],
-    whyNoEntry: [
-      'Event-risk data is unavailable.',
-    ],
-    whatToDoNext: ['Wait for integrated event-risk data before considering an entry.'],
-    marketContext: ['OANDA midpoint H4 data is available for manual read-only analysis.', 'Event-risk context is unavailable.'],
+    whyNoEntry: eventRiskUnavailable ? ['Event-risk data is unavailable.'] : [],
+    whatToDoNext: eventRiskUnavailable
+      ? ['Wait for integrated event-risk data before considering an entry.']
+      : ['Review the computed decision below; entry authorization for this pipeline remains disabled pending full event-risk provider validation (A2 spike, see docs/DECISIONS.md).'],
+    marketContext: ['OANDA midpoint H4 data is available for manual read-only analysis.', eventRiskUnavailable ? 'Event-risk context is unavailable.' : 'Event-risk context reflects a spike-quality feed (Forex Factory) pending full provider validation.'],
     indicators: {},
     crossMarket,
-    eventRisk: [{
-      status: 'UNAVAILABLE',
-      severity: 'NONE',
-      eventName: 'Live event-risk feed unavailable',
-      eventTime: latest.time,
-      source: 'unavailable',
-      freshness: 'MISSING',
-      blocksEntry: false,
-      notes: ['No live macro or event-risk feed is integrated for this phase.'],
-    }],
+    eventRisk: eventRiskEntries,
     dataHealth: {
       status: 'HEALTHY',
       providerStatus: 'HEALTHY',
@@ -265,8 +262,8 @@ export const buildOandaMultiTimeframeInputs = (h4Source: OandaH4CandleResult, da
   return { analysis, candles, multiTimeframe, technicalContext, marketLevels };
 };
 
-export const buildOandaReportInputs = (source: OandaH4CandleResult, generatedAt = new Date().toISOString(), crossMarketH4: CrossMarketH4Results = {}) =>
-  buildOandaMultiTimeframeInputs(source, emptyDailyResult(source), generatedAt, crossMarketH4);
+export const buildOandaReportInputs = (source: OandaH4CandleResult, generatedAt = new Date().toISOString(), crossMarketH4: CrossMarketH4Results = {}, eventRisk?: EventRisk[]) =>
+  buildOandaMultiTimeframeInputs(source, emptyDailyResult(source), generatedAt, crossMarketH4, eventRisk);
 
 const safetyConstrainedState = (state: DashboardState): DashboardState => ({
   ...state,
@@ -279,9 +276,14 @@ const safetyConstrainedState = (state: DashboardState): DashboardState => ({
   stopPrice: null,
   targets: [],
   estimatedRewardRisk: null,
-  primaryReason: 'Event-risk data is unavailable.',
-  reasons: ['OANDA H4 candles are completed.', 'Event-risk data is unavailable.'],
-  warnings: [...state.warnings, 'This manual OANDA run cannot authorize an entry without event-risk data.'],
+  // A2's event-risk feed (Forex Factory) is a validation spike, not a production commitment
+  // (see docs/DECISIONS.md) — entry stays disabled by explicit product decision, independent
+  // of whatever the computed decision above found, until that spike is resolved one way or
+  // the other. This text is deliberately generic rather than claiming a specific input is
+  // unavailable, since that claim would often now be false.
+  primaryReason: 'Entry authorization is disabled pending event-risk provider validation.',
+  reasons: ['OANDA H4 candles are completed.', 'Entry authorization is disabled pending event-risk provider validation.'],
+  warnings: [...state.warnings, 'This manual OANDA run cannot authorize an entry while event-risk provider validation (A2 spike) is still pending.'],
 });
 
 export const oandaRunKey = (report: SwingReport, strategyVersion: string) =>
@@ -289,7 +291,7 @@ export const oandaRunKey = (report: SwingReport, strategyVersion: string) =>
 
 const incompleteRunKey = (instrument: string) => ['oanda-v20', instrument, 'H4', 'unavailable', 'blocked', OANDA_STRATEGY_VERSION].join(':');
 
-export const runManualOandaAnalysis = (repository: AnalysisRepository, source: OandaH4CandleResult, dailySource = emptyDailyResult(source), triggeredBy: AnalysisRunTrigger = 'user', crossMarketH4: CrossMarketH4Results = {}): OandaRunResult => {
+export const runManualOandaAnalysis = (repository: AnalysisRepository, source: OandaH4CandleResult, dailySource = emptyDailyResult(source), triggeredBy: AnalysisRunTrigger = 'user', crossMarketH4: CrossMarketH4Results = {}, eventRisk?: EventRisk[]): OandaRunResult => {
   const startedAt = new Date().toISOString();
   const fetchedCandleCount = source.candles.length;
   const completedCandleCount = source.candles.filter((candle) => candle.isClosed).length;
@@ -317,10 +319,17 @@ export const runManualOandaAnalysis = (repository: AnalysisRepository, source: O
   }
 
   try {
-    const { analysis, candles, multiTimeframe, technicalContext, marketLevels } = buildOandaMultiTimeframeInputs(source, dailySource, startedAt, crossMarketH4);
+    const { analysis, candles, multiTimeframe, technicalContext, marketLevels } = buildOandaMultiTimeframeInputs(source, dailySource, startedAt, crossMarketH4, eventRisk);
     const { preferredEntryZone: _preferredEntryZone, invalidation: _invalidation, ...analysisWithoutMarketLevels } = analysis;
+    const preClampState = buildDashboardState({ ...analysisWithoutMarketLevels, supportZones: [], resistanceZones: [] }, candles, technicalContext);
+    // A2 spike observability only: entry is always forced back to WAIT below regardless of
+    // what this computed (see safetyConstrainedState) — logged so real event-risk data can be
+    // observed changing the underlying decision without touching the safety clamp itself.
+    if (eventRisk !== undefined) {
+      console.log(`[A2 spike] pre-safety-clamp decision: action=${preClampState.action} direction=${preClampState.direction} primaryReason=${JSON.stringify(preClampState.primaryReason)}`);
+    }
     const baseReport = {
-      ...buildSwingReport(safetyConstrainedState(buildDashboardState({ ...analysisWithoutMarketLevels, supportZones: [], resistanceZones: [] }, candles, technicalContext))),
+      ...buildSwingReport(safetyConstrainedState(preClampState)),
       dailySourceCandleTime: multiTimeframe.dailySourceCandleTime,
       supportZones: analysis.supportZones,
       resistanceZones: analysis.resistanceZones,
@@ -371,7 +380,12 @@ export const runManualOandaAnalysis = (repository: AnalysisRepository, source: O
   }
 };
 
-export const executeManualOandaAnalysis = async (repository: AnalysisRepository, provider: OandaProvider, instrument: string, triggeredBy: AnalysisRunTrigger = 'user') => {
-  const [source, dailySource, crossMarketH4] = await Promise.all([provider.getH4Candles(instrument, 250), provider.getDailyCandles(instrument, 250), fetchCrossMarketH4(provider)]);
-  return runManualOandaAnalysis(repository, source, dailySource, triggeredBy, crossMarketH4);
+export const executeManualOandaAnalysis = async (repository: AnalysisRepository, provider: OandaProvider, instrument: string, triggeredBy: AnalysisRunTrigger = 'user', eventRiskFetcher: typeof fetch = fetch) => {
+  const [source, dailySource, crossMarketH4, eventRisk] = await Promise.all([
+    provider.getH4Candles(instrument, 250),
+    provider.getDailyCandles(instrument, 250),
+    fetchCrossMarketH4(provider),
+    fetchForexFactoryEventRisk(eventRiskFetcher),
+  ]);
+  return runManualOandaAnalysis(repository, source, dailySource, triggeredBy, crossMarketH4, eventRisk ?? undefined);
 };

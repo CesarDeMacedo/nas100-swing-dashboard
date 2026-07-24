@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { AnalysisRepository } from '../persistence/analysisRepository';
 import type { OandaDailyCandleResult, OandaH4CandleResult } from '../providers/oanda/types';
 import { buildOandaMultiTimeframeInputs, buildOandaReportInputs, fetchCrossMarketH4, runManualOandaAnalysis, type CrossMarketH4Results } from './oandaRun';
+import type { EventRisk } from '../schemas';
 import { OandaProvider } from '../providers/oanda/oandaProvider';
 import { parseOandaConfiguration } from '../providers/oanda/config';
 
@@ -191,7 +192,7 @@ describe('manual OANDA analysis run', () => {
 
     expect(['BUY', 'SELL']).not.toContain(result.report?.action);
     expect(result.report?.isActionable).toBe(false);
-    expect(result.report?.primaryReason).toContain('Event-risk data is unavailable');
+    expect(result.report?.primaryReason).toContain('Entry authorization is disabled');
     store.close();
   });
 
@@ -233,5 +234,34 @@ describe('manual OANDA analysis run', () => {
     expect(result.us500).toBeDefined();
     expect(result.russell2000).toBeDefined();
     expect(result.us30).toBeUndefined();
+  });
+
+  it('reflects real (non-placeholder) event-risk data in the analysis when it is supplied, but still never authorizes BUY/SELL', () => {
+    const store = repository();
+    const blockingEvent: EventRisk = { status: 'AVAILABLE', severity: 'BLOCKING', eventName: 'Non-Farm Payrolls', eventTime: '2026-01-02T00:20:00.000Z', source: 'forex-factory-spike', freshness: 'FRESH', blocksEntry: true, notes: ['test'] };
+
+    const { analysis } = buildOandaMultiTimeframeInputs(trendSource('NAS100_USD', 'up'), dailySource(), '2026-01-02T00:00:00.000Z', {}, [blockingEvent]);
+    const result = runManualOandaAnalysis(store, trendSource('NAS100_USD', 'up'), dailySource(), 'user', {}, [blockingEvent]);
+
+    expect(analysis.eventRisk).toEqual([blockingEvent]);
+    expect(analysis.whyNoEntry).toEqual([]); // no longer the stale "unavailable" placeholder text
+    expect(['BUY', 'SELL']).not.toContain(result.report?.action);
+    expect(result.report?.isActionable).toBe(false);
+    expect(result.report?.primaryReason).toContain('Entry authorization is disabled');
+    store.close();
+  });
+
+  it('treats an explicitly empty event-risk array as a genuine "fetched, nothing relevant found" result, not as unavailable', () => {
+    const { analysis } = buildOandaMultiTimeframeInputs(trendSource('NAS100_USD', 'up'), dailySource(), '2026-01-02T00:00:00.000Z', {}, []);
+
+    expect(analysis.eventRisk).toEqual([]);
+    expect(analysis.whyNoEntry).toEqual([]);
+  });
+
+  it('falls back to the UNAVAILABLE event-risk placeholder when no event-risk data is supplied at all, exactly as before this feature', () => {
+    const { analysis } = buildOandaMultiTimeframeInputs(trendSource('NAS100_USD', 'up'), dailySource(), '2026-01-02T00:00:00.000Z');
+
+    expect(analysis.eventRisk).toMatchObject([{ status: 'UNAVAILABLE', freshness: 'MISSING' }]);
+    expect(analysis.whyNoEntry).toEqual(['Event-risk data is unavailable.']);
   });
 });

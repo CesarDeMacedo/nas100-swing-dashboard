@@ -25,10 +25,15 @@ const clearOandaEnvironment = () => {
   for (const key of oandaEnvironmentKeys) delete process.env[key];
 };
 
-const startService = async (options: { schedulerEnabled?: boolean; schedulerProvider?: 'fixture' | 'oanda'; schedulerIntervalMs?: number; schedulerNow?: () => Date; oandaEnvironment?: NodeJS.ProcessEnv; oandaFetch?: typeof fetch; scheduledOandaRetryDelaysMs?: number[]; notifySchedulerOutcome?: (result: SchedulerRunResult) => void } = {}): Promise<RunningService> => {
+// Never let a test hit the real Forex Factory feed — resolves fast with a 404, which
+// fetchForexFactoryEventRisk already treats as "unavailable" (falls back to the placeholder).
+const stubEventRiskFetch: typeof fetch = async () => new Response('', { status: 404 });
+
+const startService = async (options: { schedulerEnabled?: boolean; schedulerProvider?: 'fixture' | 'oanda'; schedulerIntervalMs?: number; schedulerNow?: () => Date; oandaEnvironment?: NodeJS.ProcessEnv; oandaFetch?: typeof fetch; scheduledOandaRetryDelaysMs?: number[]; notifySchedulerOutcome?: (result: SchedulerRunResult) => void; eventRiskFetch?: typeof fetch } = {}): Promise<RunningService> => {
   const directory = mkdtempSync(join(tmpdir(), 'nas100-service-'));
-  // Always inject a no-op unless a test overrides it — the scheduler must never trigger a real OS notification while running the test suite.
-  const service = createLocalService({ databasePath: join(directory, 'history.sqlite'), port: 0, schedulerEnabled: options.schedulerEnabled ?? false, schedulerProvider: options.schedulerProvider, schedulerIntervalMs: options.schedulerIntervalMs, schedulerNow: options.schedulerNow, oandaEnvironment: options.oandaEnvironment, oandaFetch: options.oandaFetch, scheduledOandaRetryDelaysMs: options.scheduledOandaRetryDelaysMs, notifySchedulerOutcome: options.notifySchedulerOutcome ?? (() => {}) });
+  // Always inject safe no-op/stub defaults unless a test overrides them — the scheduler must
+  // never trigger a real OS notification or a real network call while running the test suite.
+  const service = createLocalService({ databasePath: join(directory, 'history.sqlite'), port: 0, schedulerEnabled: options.schedulerEnabled ?? false, schedulerProvider: options.schedulerProvider, schedulerIntervalMs: options.schedulerIntervalMs, schedulerNow: options.schedulerNow, oandaEnvironment: options.oandaEnvironment, oandaFetch: options.oandaFetch, scheduledOandaRetryDelaysMs: options.scheduledOandaRetryDelaysMs, notifySchedulerOutcome: options.notifySchedulerOutcome ?? (() => {}), eventRiskFetch: options.eventRiskFetch ?? stubEventRiskFetch });
   const health = await service.start();
   const running = { stop: service.stop, schedulerStatus: service.schedulerStatus, baseUrl: `http://${LOCAL_SERVICE_HOST}:${health.port}`, directory };
   services.push(running);
