@@ -29,10 +29,10 @@ export function LocalServiceControl({ availability, runState, result, onRun, onO
         <i aria-hidden="true" />
         {statusLabel(availability)}
       </span>
-      <button type="button" onClick={onRun} disabled={running || unavailable}>
+      <button type="button" className="local-service-control__mock-run" onClick={onRun} disabled={running || unavailable}>
         {running ? 'Saving mock analysis' : 'Run mock analysis'}
       </button>
-      {onOpenHistory ? <button type="button" onClick={onOpenHistory} disabled={unavailable} aria-label="Open analysis history">Analysis history</button> : null}
+      {onOpenHistory ? <button type="button" className="header-action-button" onClick={onOpenHistory} disabled={unavailable} aria-label="Open analysis history">Analysis history</button> : null}
       {unavailable ? <small className="local-service-control__hint">Start the local analysis service to enable manual persistence.</small> : null}
       {result ? <small className="local-service-control__result" aria-live="polite">{runMessage(result)}</small> : null}
     </section>

@@ -64,7 +64,6 @@ export function AnalysisSidebar({ analysis, dashboardState }: AnalysisSidebarPro
         items={rationale}
         reason={dashboardState?.primaryReason ?? analysis.reason}
       />
-      <NextActionCard items={actions} />
       <SetupScoreCard
         score={dashboardState?.score ?? analysis.score}
         grade={dashboardState?.grade ?? analysis.grade}
@@ -73,6 +72,7 @@ export function AnalysisSidebar({ analysis, dashboardState }: AnalysisSidebarPro
         isActionable={dashboardState?.isActionable}
         reason={dashboardState?.primaryReason}
       />
+      <NextActionCard items={actions} />
       <MarketContextCard items={analysis.marketContext} />
     </aside>
   );

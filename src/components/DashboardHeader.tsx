@@ -29,7 +29,7 @@ export function DashboardHeader({ displayName, instrument, timeframe, serviceAva
   const titleTimeframe = formatTimeframeLabel(timeframe);
 
   return (
-    <div className={`dashboard-header${savedOandaProvenance ? ' dashboard-header--saved-oanda' : ''}`}>
+    <div className="dashboard-header">
       <div className="dashboard-title-block">
       <p className="dashboard-title-block__kicker">Swing intelligence</p>
       <h1>
@@ -40,15 +40,26 @@ export function DashboardHeader({ displayName, instrument, timeframe, serviceAva
         <span aria-hidden="true">·</span> {timeframe}
       </p>
       </div>
-      {savedOandaProvenance ? <div className="saved-oanda-actions">{onOpenHistory ? <button type="button" onClick={onOpenHistory}>Analysis history</button> : null}{onReturnToMock ? <button type="button" onClick={onReturnToMock}>Return to mock dashboard</button> : null}</div> : null}
-      {serviceAvailability && manualRunState && onManualRun ? (
-        <LocalServiceControl availability={serviceAvailability} runState={manualRunState} result={manualRunResult ?? null} onRun={onManualRun} onOpenHistory={onOpenHistory} />
-      ) : null}
-      {!savedOandaProvenance && serviceAvailability === 'available' && onOpenOandaPreview ? <button type="button" onClick={onOpenOandaPreview}>OANDA chart preview</button> : null}
-      {!savedOandaProvenance && serviceAvailability === 'available' && oandaConfigured && oandaManualRunState && onRunOandaNow ? (
-        <OandaManualRunControl runState={oandaManualRunState} result={oandaManualRunResult ?? null} onRun={onRunOandaNow} />
-      ) : null}
-      {!savedOandaProvenance && serviceAvailability === 'available' && oandaStatus ? <OandaStatusBadge status={oandaStatus} /> : null}
+      <div className="dashboard-header__actions">
+        {savedOandaProvenance ? (
+          <div className="saved-oanda-actions">
+            {onOpenHistory ? <button type="button" className="header-action-button" onClick={onOpenHistory}>Analysis history</button> : null}
+            {onReturnToMock ? <button type="button" className="header-action-button" onClick={onReturnToMock}>Return to mock dashboard</button> : null}
+          </div>
+        ) : null}
+        {serviceAvailability && manualRunState && onManualRun ? (
+          <LocalServiceControl availability={serviceAvailability} runState={manualRunState} result={manualRunResult ?? null} onRun={onManualRun} onOpenHistory={onOpenHistory} />
+        ) : null}
+        {!savedOandaProvenance && serviceAvailability === 'available' ? (
+          <div className="dashboard-header__oanda-actions">
+            {oandaStatus ? <OandaStatusBadge status={oandaStatus} /> : null}
+            {oandaConfigured && oandaManualRunState && onRunOandaNow ? (
+              <OandaManualRunControl runState={oandaManualRunState} result={oandaManualRunResult ?? null} onRun={onRunOandaNow} />
+            ) : null}
+            {onOpenOandaPreview ? <button type="button" className="header-action-button" onClick={onOpenOandaPreview}>OANDA chart preview</button> : null}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }

@@ -83,19 +83,28 @@ a:focus-visible {
   gap: 10px;
 }
 
+/* Title on its own row, then one wrapped action row below it — the header lives in a
+   narrow topbar column (see .dashboard-topbar), so a single horizontal row of title +
+   status + buttons has no room and starts overlapping instead of wrapping. */
 .dashboard-header {
   display: flex;
+  flex-direction: column;
   min-width: 0;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
 }
 
-.dashboard-header--saved-oanda {
-  display: grid;
-  grid-template-columns: minmax(260px, 1fr) minmax(150px, auto);
-  align-items: start;
-  gap: 10px;
+.dashboard-header__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+
+.dashboard-header__oanda-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
 }
 
 .saved-oanda-provenance {
@@ -112,9 +121,6 @@ a:focus-visible {
 }
 
 .saved-oanda-provenance button { width: max-content; max-width: 100%; }
-
-.dashboard-header--saved-oanda .dashboard-title-block h1 { white-space: normal; }
-.dashboard-header--saved-oanda .local-service-control { grid-column: 1 / -1; justify-items: start; }
 
 .dashboard-title-block {
   display: flex;
@@ -142,7 +148,8 @@ a:focus-visible {
   font-weight: 700;
   letter-spacing: 0;
   line-height: 0.95;
-  white-space: nowrap;
+  white-space: normal;
+  text-wrap: balance;
 }
 
 .dashboard-title-block > p:last-child {
@@ -276,7 +283,13 @@ a:focus-visible {
 .oanda-status-badge--error { color: var(--negative); }
 .oanda-status-badge--error i { background: var(--negative); }
 
-.local-service-control button {
+/* Shared skin for every plain secondary button in the header (chart preview, analysis
+   history, return to mock) plus the two service-control buttons below — before this they
+   fell back to bare unstyled browser buttons, which read as visually inconsistent next to
+   the styled controls beside them. */
+.header-action-button,
+.local-service-control button,
+.oanda-manual-run-control button {
   min-height: 28px;
   padding: 4px 9px;
   border: 1px solid var(--border-strong);
@@ -287,12 +300,37 @@ a:focus-visible {
   font-family: 'Barlow Condensed', sans-serif;
   font-size: 13px;
   font-weight: 600;
+  white-space: nowrap;
 }
 
-.local-service-control button:disabled { cursor: not-allowed; opacity: 0.56; }
+.header-action-button:disabled,
+.local-service-control button:disabled,
+.oanda-manual-run-control button:disabled { cursor: not-allowed; opacity: 0.56; }
+
+/* Quieter than the other header buttons on purpose: this triggers the synthetic fixture
+   pipeline for local testing, not something an end user needs at the same visual weight
+   as the real OANDA action beside it. */
+.local-service-control button.local-service-control__mock-run {
+  border-color: var(--border-muted);
+  background: transparent;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
 .local-service-control__hint,
 .local-service-control__result { max-width: 230px; color: var(--text-muted); line-height: 1.15; }
 .local-service-control__result { color: var(--text-secondary); }
+
+.oanda-manual-run-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.oanda-manual-run-control__result { max-width: 210px; color: var(--text-secondary); line-height: 1.15; }
 
 .history-overlay {
   position: fixed;
@@ -1128,6 +1166,35 @@ a:focus-visible {
 }
 .instruction-card--context {
   color: var(--info);
+}
+
+/* Secondary cards (next action, market context) are supporting detail, not the first
+   thing worth reading — a visibly quieter treatment turns the sidebar into one ranked
+   list instead of four identically-weighted boxes. Primary cards (why no entry, setup
+   score) are unaffected by this rule. */
+.instruction-card--secondary {
+  border-color: var(--border-muted);
+  background: transparent;
+}
+
+.instruction-card--secondary .instruction-card__header {
+  padding: 7px 12px 3px;
+  gap: 8px;
+}
+
+.instruction-card--secondary .instruction-card__icon {
+  width: 24px;
+  height: 24px;
+}
+
+.instruction-card--secondary h2 {
+  font-size: 16px;
+}
+
+.instruction-card--secondary .instruction-card__body {
+  padding-left: 44px;
+  color: var(--text-secondary);
+  font-size: 13px;
 }
 
 .narrative-fallback {
