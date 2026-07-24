@@ -54,6 +54,22 @@ describe('FixtureScheduler', () => {
     await scheduler.evaluate(weekdayAfternoon);
     expect(scheduler.status()).toMatchObject({ configuredProvider: 'oanda', activeProvider: 'oanda', lastRunProvider: 'oanda', lastFailureSummary: 'Scheduled OANDA analysis could not be completed.' });
   });
+  it('counts consecutive failures across slots and resets on the next non-failed outcome', async () => {
+    let outcome: 'failed' | 'created' = 'failed';
+    const scheduler = new FixtureScheduler({ enabled: true, run: async () => ({ outcome, runKey: 'fixture-key' }), log: () => undefined });
+
+    await scheduler.evaluate(weekdayAfternoon);
+    expect(scheduler.status().consecutiveFailures).toBe(1);
+    await scheduler.evaluate(weekdayEvening);
+    expect(scheduler.status().consecutiveFailures).toBe(2);
+    await scheduler.evaluate(sundayEvening);
+    expect(scheduler.status().consecutiveFailures).toBe(3);
+
+    outcome = 'created';
+    await scheduler.evaluate(new Date('2026-06-22T17:01:00.000Z'));
+    expect(scheduler.status().consecutiveFailures).toBe(0);
+  });
+
   it('triggers each in-memory Toronto slot once', async () => {
     const run = vi.fn(async () => ({ outcome: 'created' as const, runKey: 'fixture-key' }));
     const scheduler = new FixtureScheduler({ enabled: true, run, log: () => undefined });

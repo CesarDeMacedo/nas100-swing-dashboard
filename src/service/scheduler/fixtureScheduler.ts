@@ -18,6 +18,8 @@ export type SchedulerStatus = {
   activeProvider: SchedulerProvider;
   lastRunProvider: SchedulerProvider | null;
   lastFailureSummary: string | null;
+  /** Consecutive 'failed' outcomes since the last non-failed run (or process start). Resets to 0 on any other outcome. In-memory only — lost on restart, same as the rest of this status. */
+  consecutiveFailures: number;
 };
 
 type FixtureSchedulerOptions = {
@@ -38,6 +40,7 @@ export class FixtureScheduler {
   private lastEvaluatedSlot: string | null = null;
   private lastRunResult: SchedulerRunResult | null = null;
   private lastRunProvider: SchedulerProvider | null = null;
+  private consecutiveFailures = 0;
 
   public constructor(private readonly options: FixtureSchedulerOptions) {
     this.now = options.now ?? (() => new Date());
@@ -68,6 +71,7 @@ export class FixtureScheduler {
       activeProvider: this.options.provider ?? 'fixture',
       lastRunProvider: this.lastRunProvider,
       lastFailureSummary: this.lastRunResult?.outcome === 'failed' ? this.lastRunResult.message ?? 'Scheduled analysis failed.' : null,
+      consecutiveFailures: this.consecutiveFailures,
     };
   }
 
@@ -82,6 +86,7 @@ export class FixtureScheduler {
       const result = await this.options.run();
       this.lastRunResult = result;
       this.lastRunProvider = this.options.provider ?? 'fixture';
+      this.consecutiveFailures = result.outcome === 'failed' ? this.consecutiveFailures + 1 : 0;
       this.log(`NAS100 scheduler ${slot.key}: ${result.outcome}`);
       return result;
     } catch (cause) {
@@ -92,6 +97,7 @@ export class FixtureScheduler {
       };
       this.lastRunResult = result;
       this.lastRunProvider = this.options.provider ?? 'fixture';
+      this.consecutiveFailures += 1;
       this.log(`NAS100 scheduler ${slot.key}: failed`);
       return result;
     }
