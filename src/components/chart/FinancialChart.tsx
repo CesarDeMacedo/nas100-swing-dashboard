@@ -14,6 +14,7 @@ import { formatTorontoTime } from '../../lib/format';
 import {
   formatChartPrice,
   toChartCandles,
+  toUtcTimestamp,
   type PriceLineModel,
   type ZoneOverlayModel,
 } from './chartAdapter';
@@ -103,7 +104,7 @@ export const FinancialChart = forwardRef<FinancialChartHandle, FinancialChartPro
         secondsVisible: false,
         borderVisible: true,
         borderColor: '#2a3a46',
-        rightOffset: 4,
+        rightOffset: 12,
         barSpacing: 9,
         minBarSpacing: 3,
         tickMarkFormatter: formatAxisTime,
@@ -132,7 +133,8 @@ export const FinancialChart = forwardRef<FinancialChartHandle, FinancialChartPro
     const applyOverlays = () => {
       if (zoneLayerRef.current) series.detachPrimitive(zoneLayerRef.current);
       priceLineRefs.current.forEach((line) => series.removePriceLine(line));
-      const zoneLayer = new PriceZoneLayer(zones, priceLines.map((line) => line.price));
+      const lastCandleTime = candles.length ? toUtcTimestamp(candles[candles.length - 1].time) : undefined;
+      const zoneLayer = new PriceZoneLayer(zones, priceLines.map((line) => line.price), lastCandleTime);
       zoneLayerRef.current = zoneLayer;
       series.attachPrimitive(zoneLayer);
       priceLineRefs.current = priceLines.map((line) => series.createPriceLine({
@@ -149,7 +151,9 @@ export const FinancialChart = forwardRef<FinancialChartHandle, FinancialChartPro
     applyOverlays();
 
     const visibleBars = Math.min(58, candles.length);
-    chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, candles.length - visibleBars), to: candles.length + 3 });
+    // +12 (not +3) leaves genuine empty space for the price-zone labels drawn just right
+    // of the last candle (see PriceZoneLayer) instead of relying on the pane-edge clamp.
+    chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, candles.length - visibleBars), to: candles.length + 12 });
 
     const resizeObserver = new ResizeObserver((entries) => {
       const entry = entries[0];

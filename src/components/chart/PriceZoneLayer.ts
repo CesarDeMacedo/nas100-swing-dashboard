@@ -15,6 +15,11 @@ export class PriceZoneLayer implements ISeriesPrimitive<Time> {
   constructor(
     private readonly zones: ZoneOverlayModel[],
     private readonly additionalPrices: number[] = [],
+    /** Time of the most recent candle. Labels anchor just to the right of it (genuinely
+     * empty space at any zoom/pan) instead of a fixed pane-relative offset, which used to
+     * land on top of the last several candles whenever they filled that assumed margin —
+     * the "pan left to read the label" complaint. */
+    private readonly lastCandleTime?: Time,
   ) {}
 
   attached(parameters: SeriesAttachedParameter<Time>) {
@@ -78,7 +83,16 @@ export class PriceZoneLayer implements ISeriesPrimitive<Time> {
           draw: (target) => {
             target.useMediaCoordinateSpace(({ context, mediaSize }) => {
               const series = this.parameters?.series;
+              const chart = this.parameters?.chart;
               if (!series) return;
+
+              // Genuinely empty space just right of the last candle, at whatever the
+              // current zoom/pan happens to be. Falls back to a fixed right-edge margin
+              // only when that coordinate can't be resolved (e.g. the last candle has been
+              // panned off-screen).
+              const lastCandleX = this.lastCandleTime !== undefined
+                ? chart?.timeScale().timeToCoordinate(this.lastCandleTime) ?? null
+                : null;
 
               this.zones.forEach((zone) => {
                 const highY = series.priceToCoordinate(zone.high);
@@ -90,7 +104,9 @@ export class PriceZoneLayer implements ISeriesPrimitive<Time> {
                 context.save();
                 context.font = LABEL_FONT;
                 const textWidth = context.measureText(label).width;
-                const labelX = Math.max(8, mediaSize.width - textWidth - 112);
+                const labelX = lastCandleX !== null
+                  ? Math.min(Math.max(8, lastCandleX + 10), mediaSize.width - textWidth - 8)
+                  : Math.max(8, mediaSize.width - textWidth - 112);
                 context.fillStyle = 'rgba(3, 16, 27, 0.82)';
                 context.fillRect(labelX - 5, centerY - 9, textWidth + 10, 18);
                 context.fillStyle = zone.textColor;

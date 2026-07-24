@@ -538,15 +538,26 @@ a:focus-visible {
   background: var(--surface-chart);
 }
 
+/* Saved-analysis metadata gets its own row below identity/OHLC/controls instead of
+   sharing one row with them — sharing caused the saved-meta block's own internal wrap to
+   overlap the OHLC readout instead of pushing it down. */
 .chart-header {
   display: flex;
+  flex-direction: column;
   min-width: 0;
-  min-height: 49px;
-  align-items: center;
-  gap: 20px;
+  gap: 4px;
   padding: 8px 12px 8px 16px;
   border-bottom: 1px solid var(--border-muted);
   background: #06121c;
+}
+
+.chart-header__row {
+  display: flex;
+  flex-wrap: wrap;
+  min-width: 0;
+  min-height: 33px;
+  align-items: center;
+  gap: 8px 20px;
 }
 
 .chart-header__identity {
@@ -689,10 +700,13 @@ a:focus-visible {
   display: block;
 }
 
+/* Top-left, not top-right: price-zone labels (PriceZoneLayer) anchor near the last
+   candle/right side of the pane by design, so a fixed top-right badge was landing right on
+   top of resistance-zone text whenever that zone sat near the top of the visible range. */
 .chart-status-overlay {
   position: absolute;
   top: 11px;
-  right: 92px;
+  left: 12px;
   z-index: 6;
   display: inline-flex;
   align-items: center;
@@ -1463,8 +1477,7 @@ a:focus-visible {
   .chart-panel {
     min-height: 560px;
   }
-  .chart-header {
-    flex-wrap: wrap;
+  .chart-header__row {
     gap: 8px 14px;
   }
   .chart-header__ohlc {
