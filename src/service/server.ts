@@ -116,6 +116,7 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
   let liveReconnectTimer: ReturnType<typeof setTimeout> | null = null;
   let liveReconnectAttempt = 0;
   let liveRolloverRefresh: Promise<void> | null = null;
+  let liveIsConnected = false;
   const reconnectDelays = [1000, 2000, 5000, 10000];
   const h4Window = (time: string) => Math.floor(Date.parse(time) / (4 * 60 * 60 * 1000));
   const liveBroadcast = (event: string, payload: unknown) => liveSubscribers.forEach((subscriber) => sse(subscriber, event, payload));
@@ -136,6 +137,7 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
       liveBroadcast('snapshot', snapshot);
       const response = await oandaProvider.openPricingStream(oandaConfiguration.nas100Instrument, controller.signal);
       liveReconnectAttempt = 0;
+      liveIsConnected = true;
       liveBroadcast('connection', { state: 'live', receivedAt: new Date().toISOString() });
       const reader = response.body?.getReader();
       if (!reader) throw new Error('missing stream body');
@@ -167,8 +169,8 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
           } catch { liveBroadcast('error', { state: 'stale', message: 'OANDA live observation received invalid stream data.', receivedAt: new Date().toISOString() }); }
         }
       }
-      if (!controller.signal.aborted) { liveBroadcast('error', { state: 'reconnecting', message: 'OANDA live observation is reconnecting.', receivedAt: new Date().toISOString() }); scheduleReconnect(); }
-    } catch { if (!controller.signal.aborted) { liveBroadcast('error', { state: 'reconnecting', message: 'OANDA live observation is reconnecting.', receivedAt: new Date().toISOString() }); scheduleReconnect(); } }
+      if (!controller.signal.aborted) { liveIsConnected = false; liveBroadcast('error', { state: 'reconnecting', message: 'OANDA live observation is reconnecting.', receivedAt: new Date().toISOString() }); scheduleReconnect(); }
+    } catch { if (!controller.signal.aborted) { liveIsConnected = false; liveBroadcast('error', { state: 'reconnecting', message: 'OANDA live observation is reconnecting.', receivedAt: new Date().toISOString() }); scheduleReconnect(); } }
     finally { if (liveAbort === controller) liveAbort = null; }
   };
   const scheduleReconnect = () => {
@@ -176,7 +178,7 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
     const delay = reconnectDelays[Math.min(liveReconnectAttempt, reconnectDelays.length - 1)]; liveReconnectAttempt += 1;
     liveReconnectTimer = setTimeout(() => { liveReconnectTimer = null; void startLiveStream(); }, delay);
   };
-  const stopLiveStream = () => { liveAbort?.abort(); liveAbort = null; if (liveReconnectTimer) clearTimeout(liveReconnectTimer); liveReconnectTimer = null; liveReconnectAttempt = 0; liveOpenCandle = null; };
+  const stopLiveStream = () => { liveAbort?.abort(); liveAbort = null; liveIsConnected = false; if (liveReconnectTimer) clearTimeout(liveReconnectTimer); liveReconnectTimer = null; liveReconnectAttempt = 0; liveOpenCandle = null; };
   const scheduler = new FixtureScheduler({
     enabled: schedulerEnabled,
     intervalMs: options.schedulerIntervalMs,
@@ -242,7 +244,22 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
         response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
         if (liveStopTimer) { clearTimeout(liveStopTimer); liveStopTimer = null; }
         liveSubscribers.add(response);
-        void startLiveStream();
+        if (liveIsConnected) {
+          const receivedAt = new Date().toISOString();
+          sse(response, 'connection', { state: 'live', receivedAt });
+          sse(response, 'snapshot', {
+            provider: 'oanda-v20' as const,
+            environment: oandaConfiguration.environment,
+            instrument: oandaConfiguration.nas100Instrument,
+            receivedAt,
+            currentPrice: liveOpenCandle?.close ?? null,
+            openCandle: liveOpenCandle,
+            lastCompletedH4SourceTime: liveLastCompletedTime,
+            streamState: 'live' as const,
+          });
+        } else {
+          void startLiveStream();
+        }
         request.on('close', () => {
           liveSubscribers.delete(response);
           if (liveSubscribers.size === 0) liveStopTimer = setTimeout(stopLiveStream, 1_000);
