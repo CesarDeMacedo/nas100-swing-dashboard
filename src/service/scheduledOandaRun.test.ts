@@ -43,8 +43,12 @@ type H4Step = { kind: 'error' } | { kind: 'candle'; time: string };
 
 const dailyCandlePayload = { candles: [{ time: '2026-07-23T00:00:00.000Z', complete: true, mid: { o: '100', h: '101', l: '99', c: '100.5' } }] };
 
-/** Routes H4 candle GETs through a scripted sequence of steps (one per call, sequence
- * padding at the end), Daily candle GETs always succeed with one fixed completed candle. */
+const crossMarketCandlePayload = { candles: [{ time: '2026-07-24T13:00:00.000Z', complete: true, mid: { o: '100', h: '101', l: '99', c: '100.5' } }] };
+
+/** Routes H4 candle GETs for NAS100_USD through a scripted sequence of steps (one per call,
+ * sequence padding at the end); Daily and cross-market (SPX500/US30/US2000) GETs always
+ * succeed with a fixed candle, since those are supplementary and outside this module's
+ * retry/window logic (fetched by src/service/oandaRun.ts's fetchCrossMarketH4). */
 const buildFetcher = (steps: H4Step[]) => {
   let h4CallCount = 0;
   const fetcher: typeof fetch = async (input) => {
@@ -52,6 +56,9 @@ const buildFetcher = (steps: H4Step[]) => {
     const parsed = new URL(url);
     if (parsed.searchParams.get('granularity') === 'D') {
       return new Response(JSON.stringify(dailyCandlePayload), { status: 200 });
+    }
+    if (!parsed.pathname.includes('NAS100_USD')) {
+      return new Response(JSON.stringify(crossMarketCandlePayload), { status: 200 });
     }
     const step = steps[Math.min(h4CallCount, steps.length - 1)];
     h4CallCount += 1;

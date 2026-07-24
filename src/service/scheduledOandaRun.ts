@@ -4,7 +4,7 @@ import { h4Window } from '../domain/h4Window';
 import type { AnalysisRepository } from '../persistence/analysisRepository';
 import type { OandaProvider } from '../providers/oanda/oandaProvider';
 import type { OandaH4Candle } from '../providers/oanda/types';
-import { OANDA_STRATEGY_VERSION, runManualOandaAnalysis, type OandaRunResult } from './oandaRun';
+import { fetchCrossMarketH4, OANDA_STRATEGY_VERSION, runManualOandaAnalysis, type OandaRunResult } from './oandaRun';
 
 export type ScheduledOandaRunOptions = {
   retryDelaysMs?: number[];
@@ -135,7 +135,11 @@ export const executeScheduledOandaAnalysis = async (
 
     const actualWindow = h4Window(latestCompleted.time);
     if (actualWindow === expectedCompletedWindow) {
-      return runManualOandaAnalysis(repository, source, dailySource, 'scheduler');
+      // Cross-market confirmation is supplementary, not safety-critical: fetched here as a
+      // single best-effort attempt, outside the window-retry loop above (per-instrument
+      // failures just classify as UNAVAILABLE downstream, they never block or retry this run).
+      const crossMarketH4 = await fetchCrossMarketH4(provider);
+      return runManualOandaAnalysis(repository, source, dailySource, 'scheduler', crossMarketH4);
     }
     if (actualWindow > expectedCompletedWindow) {
       return persistBlockedWindowRun(repository, instrument, startedAt, expectedCompletedWindow, latestCompleted.time, attempt + 1, 'window-advanced');

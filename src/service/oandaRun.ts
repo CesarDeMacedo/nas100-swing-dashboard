@@ -57,19 +57,79 @@ export type OandaMultiTimeframeData = {
   warnings: string[];
 };
 
-const unavailableCrossMarket = (instrument: 'US500' | 'US30' | 'RUSSELL_2000') => ({
-  instrument,
-  confirmation: 'UNAVAILABLE' as const,
-  dataFreshness: 'MISSING' as const,
-  notes: ['Live cross-market data is unavailable for this manual OANDA run.'],
-});
+/** OANDA v20 symbols for the three cross-market confirmation instruments (ADR-014), confirmed
+ * present on the account via a one-off account-instrument check — no separate provider needed. */
+export const CROSS_MARKET_OANDA_SYMBOLS = { us500: 'SPX500_USD', us30: 'US30_USD', russell2000: 'US2000_USD' } as const;
+type CrossMarketKey = keyof typeof CROSS_MARKET_OANDA_SYMBOLS;
+const CROSS_MARKET_LABELS: Record<CrossMarketKey, 'US500' | 'US30' | 'RUSSELL_2000'> = { us500: 'US500', us30: 'US30', russell2000: 'RUSSELL_2000' };
+
+export type CrossMarketH4Results = Partial<Record<CrossMarketKey, OandaH4CandleResult>>;
+
+/** Best-effort, single-attempt fetch of the three cross-market H4 series. Failures for an
+ * individual instrument are swallowed here (that instrument classifies as UNAVAILABLE below)
+ * rather than failing the whole NAS100 run — this data is supplementary, not safety-critical,
+ * and does not participate in the scheduler's window-retry logic (src/service/scheduledOandaRun.ts). */
+export const fetchCrossMarketH4 = async (provider: OandaProvider, count = 250): Promise<CrossMarketH4Results> => {
+  const entries = await Promise.all(
+    (Object.entries(CROSS_MARKET_OANDA_SYMBOLS) as [CrossMarketKey, string][]).map(async ([key, symbol]) => {
+      try {
+        return [key, await provider.getH4Candles(symbol, count)] as const;
+      } catch {
+        return [key, undefined] as const;
+      }
+    }),
+  );
+  return Object.fromEntries(entries.filter(([, result]) => result !== undefined)) as CrossMarketH4Results;
+};
+
+const directionOf = (structure: string): 'bullish' | 'bearish' | 'neutral' =>
+  structure.startsWith('bullish') ? 'bullish' : structure.startsWith('bearish') ? 'bearish' : 'neutral';
+
+const classifyCrossMarketInstrument = (key: CrossMarketKey, nas100Direction: 'bullish' | 'bearish' | 'neutral', source: OandaH4CandleResult | undefined) => {
+  const instrument = CROSS_MARKET_LABELS[key];
+  const completed = source?.candles.filter((candle) => candle.isClosed) ?? [];
+  const latest = completed.at(-1);
+  if (!latest) return { instrument, confirmation: 'UNAVAILABLE' as const, dataFreshness: 'MISSING' as const, notes: [`Live ${instrument} H4 data is unavailable for this run.`] };
+  const context = buildTechnicalContext(asDatasetCandles(completed));
+  const crossDirection = directionOf(context.canonicalH4Structure);
+  const confirmation = nas100Direction === 'neutral' || crossDirection === 'neutral' ? 'NEUTRAL' as const : nas100Direction === crossDirection ? 'CONFIRMING' as const : 'CONTRADICTING' as const;
+  const previous = completed.at(-2);
+  return {
+    instrument,
+    confirmation,
+    dataFreshness: 'FRESH' as const,
+    lastPrice: latest.close,
+    ...(previous ? { changePercent: ((latest.close - previous.close) / previous.close) * 100 } : {}),
+    completedCandleAt: latest.time,
+    notes: [`${instrument} H4 structure: ${context.canonicalH4Structure}.`],
+  };
+};
+
+const buildCrossMarketSnapshot = (nas100Direction: 'bullish' | 'bearish' | 'neutral', crossMarketH4: CrossMarketH4Results) => {
+  const us500 = classifyCrossMarketInstrument('us500', nas100Direction, crossMarketH4.us500);
+  const us30 = classifyCrossMarketInstrument('us30', nas100Direction, crossMarketH4.us30);
+  const russell2000 = classifyCrossMarketInstrument('russell2000', nas100Direction, crossMarketH4.russell2000);
+  const available = [us500.confirmation, us30.confirmation, russell2000.confirmation].filter((value) => value !== 'UNAVAILABLE');
+  const confirmationStatus =
+    available.length === 0 ? ('UNAVAILABLE' as const)
+    : available.every((value) => value === 'CONFIRMING') ? ('CONFIRMING' as const)
+    : available.some((value) => value === 'CONTRADICTING') && available.some((value) => value === 'CONFIRMING') ? ('MIXED' as const)
+    : available.some((value) => value === 'CONTRADICTING') ? ('CONTRADICTING' as const)
+    : ('MIXED' as const);
+  return {
+    us500, us30, russell2000,
+    confirmationStatus,
+    dataFreshness: available.length > 0 ? ('FRESH' as const) : ('MISSING' as const),
+    notes: available.length > 0 ? ["Cross-market confirmation reflects each index's own completed H4 structure relative to NAS100."] : ['Live cross-market data is unavailable for this manual OANDA run.'],
+  };
+};
 
 const asDatasetCandles = (candles: readonly { time: string; open: number; high: number; low: number; close: number; volume: number | null; instrument: string; timeframe: 'H4' | 'D'; source: 'oanda-v20' }[]) =>
   candles.map((candle) => ({ time: candle.time, open: candle.open, high: candle.high, low: candle.low, close: candle.close, isClosed: true, ...(candle.volume === null ? {} : { volume: candle.volume }), source: candle.source, instrument: candle.instrument, timeframe: candle.timeframe }));
 
 const emptyDailyResult = (source: OandaH4CandleResult): OandaDailyCandleResult => ({ provider: source.provider, environment: source.environment, instrument: source.instrument, timeframe: 'D', candles: [] });
 
-export const buildOandaMultiTimeframeInputs = (h4Source: OandaH4CandleResult, dailySource: OandaDailyCandleResult, generatedAt = new Date().toISOString()): OandaReportInputs => {
+export const buildOandaMultiTimeframeInputs = (h4Source: OandaH4CandleResult, dailySource: OandaDailyCandleResult, generatedAt = new Date().toISOString(), crossMarketH4: CrossMarketH4Results = {}): OandaReportInputs => {
   const completed = h4Source.candles.filter((candle) => candle.isClosed);
   const dailyCompleted = dailySource.candles.filter((candle) => candle.isClosed);
   const latest = completed.at(-1);
@@ -116,6 +176,7 @@ export const buildOandaMultiTimeframeInputs = (h4Source: OandaH4CandleResult, da
   };
   const marketLevelDirection: MarketLevelDirection = technicalContext.canonicalH4Structure.startsWith('bullish') ? 'long' : technicalContext.canonicalH4Structure.startsWith('bearish') ? 'short' : 'none';
   const marketLevels = calculateMarketLevels(candles.candles, marketLevelDirection);
+  const crossMarket = buildCrossMarketSnapshot(directionOf(technicalContext.canonicalH4Structure), crossMarketH4);
   const analysis = AnalysisReportSchema.parse({
     schemaVersion: '1.0.0',
     strategyVersion: OANDA_STRATEGY_VERSION,
@@ -145,20 +206,12 @@ export const buildOandaMultiTimeframeInputs = (h4Source: OandaH4CandleResult, da
     ...(marketLevels.invalidationCandidate === null ? {} : { invalidation: marketLevels.invalidationCandidate }),
     targets: [],
     whyNoEntry: [
-      'Cross-market confirmation is unavailable.',
       'Event-risk data is unavailable.',
     ],
-    whatToDoNext: ['Wait for integrated cross-market and event-risk data before considering an entry.'],
-    marketContext: ['OANDA midpoint H4 data is available for manual read-only analysis.', 'Cross-market and event-risk context are unavailable.'],
+    whatToDoNext: ['Wait for integrated event-risk data before considering an entry.'],
+    marketContext: ['OANDA midpoint H4 data is available for manual read-only analysis.', 'Event-risk context is unavailable.'],
     indicators: {},
-    crossMarket: {
-      us500: unavailableCrossMarket('US500'),
-      us30: unavailableCrossMarket('US30'),
-      russell2000: unavailableCrossMarket('RUSSELL_2000'),
-      confirmationStatus: 'UNAVAILABLE',
-      dataFreshness: 'MISSING',
-      notes: ['No live cross-market confirmation is integrated for this phase.'],
-    },
+    crossMarket,
     eventRisk: [{
       status: 'UNAVAILABLE',
       severity: 'NONE',
@@ -203,8 +256,8 @@ export const buildOandaMultiTimeframeInputs = (h4Source: OandaH4CandleResult, da
   return { analysis, candles, multiTimeframe, technicalContext, marketLevels };
 };
 
-export const buildOandaReportInputs = (source: OandaH4CandleResult, generatedAt = new Date().toISOString()) =>
-  buildOandaMultiTimeframeInputs(source, emptyDailyResult(source), generatedAt);
+export const buildOandaReportInputs = (source: OandaH4CandleResult, generatedAt = new Date().toISOString(), crossMarketH4: CrossMarketH4Results = {}) =>
+  buildOandaMultiTimeframeInputs(source, emptyDailyResult(source), generatedAt, crossMarketH4);
 
 const safetyConstrainedState = (state: DashboardState): DashboardState => ({
   ...state,
@@ -217,9 +270,9 @@ const safetyConstrainedState = (state: DashboardState): DashboardState => ({
   stopPrice: null,
   targets: [],
   estimatedRewardRisk: null,
-  primaryReason: 'Cross-market confirmation and event-risk data are unavailable.',
-  reasons: ['OANDA H4 candles are completed.', 'Cross-market confirmation is unavailable.', 'Event-risk data is unavailable.'],
-  warnings: [...state.warnings, 'This manual OANDA run cannot authorize an entry without cross-market and event-risk data.'],
+  primaryReason: 'Event-risk data is unavailable.',
+  reasons: ['OANDA H4 candles are completed.', 'Event-risk data is unavailable.'],
+  warnings: [...state.warnings, 'This manual OANDA run cannot authorize an entry without event-risk data.'],
 });
 
 export const oandaRunKey = (report: SwingReport, strategyVersion: string) =>
@@ -227,7 +280,7 @@ export const oandaRunKey = (report: SwingReport, strategyVersion: string) =>
 
 const incompleteRunKey = (instrument: string) => ['oanda-v20', instrument, 'H4', 'unavailable', 'blocked', OANDA_STRATEGY_VERSION].join(':');
 
-export const runManualOandaAnalysis = (repository: AnalysisRepository, source: OandaH4CandleResult, dailySource = emptyDailyResult(source), triggeredBy: AnalysisRunTrigger = 'user'): OandaRunResult => {
+export const runManualOandaAnalysis = (repository: AnalysisRepository, source: OandaH4CandleResult, dailySource = emptyDailyResult(source), triggeredBy: AnalysisRunTrigger = 'user', crossMarketH4: CrossMarketH4Results = {}): OandaRunResult => {
   const startedAt = new Date().toISOString();
   const fetchedCandleCount = source.candles.length;
   const completedCandleCount = source.candles.filter((candle) => candle.isClosed).length;
@@ -255,7 +308,7 @@ export const runManualOandaAnalysis = (repository: AnalysisRepository, source: O
   }
 
   try {
-    const { analysis, candles, multiTimeframe, technicalContext, marketLevels } = buildOandaMultiTimeframeInputs(source, dailySource, startedAt);
+    const { analysis, candles, multiTimeframe, technicalContext, marketLevels } = buildOandaMultiTimeframeInputs(source, dailySource, startedAt, crossMarketH4);
     const { preferredEntryZone: _preferredEntryZone, invalidation: _invalidation, ...analysisWithoutMarketLevels } = analysis;
     const baseReport = {
       ...buildSwingReport(safetyConstrainedState(buildDashboardState({ ...analysisWithoutMarketLevels, supportZones: [], resistanceZones: [] }, candles, technicalContext))),
@@ -310,6 +363,6 @@ export const runManualOandaAnalysis = (repository: AnalysisRepository, source: O
 };
 
 export const executeManualOandaAnalysis = async (repository: AnalysisRepository, provider: OandaProvider, instrument: string, triggeredBy: AnalysisRunTrigger = 'user') => {
-  const [source, dailySource] = await Promise.all([provider.getH4Candles(instrument, 250), provider.getDailyCandles(instrument, 250)]);
-  return runManualOandaAnalysis(repository, source, dailySource, triggeredBy);
+  const [source, dailySource, crossMarketH4] = await Promise.all([provider.getH4Candles(instrument, 250), provider.getDailyCandles(instrument, 250), fetchCrossMarketH4(provider)]);
+  return runManualOandaAnalysis(repository, source, dailySource, triggeredBy, crossMarketH4);
 };
