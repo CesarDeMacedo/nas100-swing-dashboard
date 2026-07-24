@@ -39,6 +39,7 @@ export default function App({
   const [manualRunResult, setManualRunResult] = useState<ManualRunResult | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [history, setHistory] = useState<HistoryResult | { kind: 'loading' } | null>(null);
+  const [historyLimit, setHistoryLimit] = useState(10);
   const [historyDetail, setHistoryDetail] = useState<RunDetailResult | { kind: 'loading' } | null>(null);
   const [selectedHistoryRunKey, setSelectedHistoryRunKey] = useState<string | null>(null);
   const [savedOandaSnapshot, setSavedOandaSnapshot] = useState<SavedOandaDisplaySnapshot | null>(null);
@@ -110,11 +111,12 @@ export default function App({
     setManualRunState(manualRun.kind);
   };
 
-  const loadHistory = async () => {
+  const loadHistory = async (limit = historyLimit) => {
+    setHistoryLimit(limit);
     setHistory({ kind: 'loading' });
     setHistoryDetail(null);
     setSelectedHistoryRunKey(null);
-    setHistory(await serviceClient.listRecentRuns(10));
+    setHistory(await serviceClient.listRecentRuns(limit));
   };
 
   const openHistory = () => {
@@ -172,6 +174,8 @@ export default function App({
           onOpenHistory={openHistory}
           onCloseHistory={() => setHistoryOpen(false)}
           onRefreshHistory={() => void loadHistory()}
+          historyLimit={historyLimit}
+          onChangeHistoryLimit={(limit) => void loadHistory(limit)}
           onSelectHistoryRun={selectHistoryRun}
           onViewHistoryInDashboard={viewSavedOandaAnalysis}
           savedOandaProvenance={savedOandaSnapshot ? `OANDA ${savedOandaSnapshot.environment.toUpperCase()}` : null}

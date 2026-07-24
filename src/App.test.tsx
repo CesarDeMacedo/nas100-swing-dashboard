@@ -43,6 +43,7 @@ describe('dashboard rendering', () => {
   };
   const client = (checkHealth: LocalAnalysisServiceClient['checkHealth'], runManualFixture: LocalAnalysisServiceClient['runManualFixture'], listRecentRuns: LocalAnalysisServiceClient['listRecentRuns'] = async () => ({ kind: 'empty', runs: [] }), getRunByKey: LocalAnalysisServiceClient['getRunByKey'] = async () => ({ kind: 'failed', message: 'not selected' })): LocalAnalysisServiceClient => ({ checkHealth, runManualFixture, listRecentRuns, getRunByKey });
   const historyItem = { run: { id: 'run-1', runKey: 'fixture-run', completedAt: '2026-07-22T01:01:00.000Z', status: 'COMPLETED', source: 'fixture', persistedAt: '2026-07-22T01:01:01.000Z', reportId: 'report-1' }, report: { action: 'WAIT_FOR_PULLBACK', direction: 'long', score: 38, grade: 'D', sourceCandleTime: '2026-07-22T01:00:00.000Z', isActionable: false } };
+  const secondHistoryItem = { run: { id: 'run-2', runKey: 'fixture-run-2', completedAt: '2026-07-22T05:01:00.000Z', status: 'COMPLETED', source: 'fixture', persistedAt: '2026-07-22T05:01:01.000Z', reportId: 'report-2' }, report: { action: 'SELL', direction: 'short', score: 82, grade: 'A', sourceCandleTime: '2026-07-22T05:00:00.000Z', isActionable: true } };
   const historyDetail: RunDetailResult = { kind: 'succeeded', item: historyItem, report: { ...historyItem.report, primaryReason: 'Pullback location is pending.', entryTrigger: null, stopPrice: null, targets: [], estimatedRewardRisk: null } };
 
   it('renders local service health and preserves the fixture dashboard while offline', async () => {
@@ -109,6 +110,32 @@ describe('dashboard rendering', () => {
     expect(listRecentRuns).toHaveBeenCalledTimes(2);
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(screen.queryByRole('dialog', { name: 'Analysis history' })).not.toBeInTheDocument();
+  });
+
+  it('filters local analysis history client-side and reloads with a chosen record limit', async () => {
+    const listRecentRuns = vi.fn<LocalAnalysisServiceClient['listRecentRuns']>().mockResolvedValue({ kind: 'succeeded', runs: [historyItem, secondHistoryItem] } as HistoryResult);
+    render(<App serviceClient={client(async () => ({ kind: 'available' }), async () => run, listRecentRuns)} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Open analysis history' }));
+    const historyDialog = await screen.findByRole('dialog', { name: 'Analysis history' });
+    expect(within(historyDialog).getByText('WAIT FOR PULLBACK')).toBeVisible();
+    expect(within(historyDialog).getByText('SELL')).toBeVisible();
+
+    fireEvent.change(within(historyDialog).getByRole('searchbox', { name: 'Filter local analysis history' }), { target: { value: 'short' } });
+    expect(within(historyDialog).queryByText('WAIT FOR PULLBACK')).not.toBeInTheDocument();
+    expect(within(historyDialog).getByText('SELL')).toBeVisible();
+
+    // Typing the human-readable label (with spaces) must match the underlying enum
+    // value (with underscores) — this is what a user actually sees and types.
+    fireEvent.change(within(historyDialog).getByRole('searchbox', { name: 'Filter local analysis history' }), { target: { value: 'wait for pullback' } });
+    expect(within(historyDialog).getByText('WAIT FOR PULLBACK')).toBeVisible();
+    expect(within(historyDialog).queryByText('SELL')).not.toBeInTheDocument();
+
+    fireEvent.change(within(historyDialog).getByRole('searchbox', { name: 'Filter local analysis history' }), { target: { value: 'no such record' } });
+    expect(within(historyDialog).getByText('No records match this filter.')).toBeVisible();
+
+    fireEvent.change(within(historyDialog).getByRole('combobox', { name: 'Number of records to load' }), { target: { value: '50' } });
+    expect(listRecentRuns).toHaveBeenLastCalledWith(50);
   });
 
   it('opens a saved OANDA snapshot in the dashboard and returns to mock data without provider calls', async () => {

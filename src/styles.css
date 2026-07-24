@@ -308,12 +308,51 @@ a:focus-visible {
   display: grid;
   width: min(430px, 100%);
   max-height: min(720px, calc(100vh - 28px));
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   overflow: hidden;
   border: 1px solid var(--border-strong);
   border-radius: 8px;
   background: var(--surface-panel);
   box-shadow: -18px 0 42px rgb(0 0 0 / 36%);
+}
+
+.history-panel__controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 13px;
+  border-bottom: 1px solid var(--border-muted);
+}
+
+.history-panel__controls input[type='search'] {
+  flex: 1;
+  padding: 5px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: #06121c;
+  color: var(--text-primary);
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 13px;
+}
+
+.history-panel__controls label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.history-panel__controls select {
+  padding: 4px 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: #06121c;
+  color: var(--text-primary);
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 13px;
 }
 
 .history-panel > header {

@@ -30,6 +30,8 @@ type DashboardProps = {
   onOpenHistory?: () => void;
   onCloseHistory?: () => void;
   onRefreshHistory?: () => void;
+  historyLimit?: number;
+  onChangeHistoryLimit?: (limit: number) => void;
   onSelectHistoryRun?: (runKey: string) => void;
   onViewHistoryInDashboard?: (snapshot: SavedOandaDisplaySnapshot) => void;
   savedOandaProvenance?: string | null;
@@ -42,7 +44,7 @@ type DashboardProps = {
   oandaStatus?: 'checking' | OandaProviderStatus;
 };
 
-export function Dashboard({ analysis, candleResult, dashboardState, serviceAvailability, manualRunState, manualRunResult, onManualRun, historyOpen = false, history, historyDetail, selectedHistoryRunKey = null, onOpenHistory, onCloseHistory, onRefreshHistory, onSelectHistoryRun, onViewHistoryInDashboard, savedOandaProvenance, savedSourceCandleTime, onReturnToMock, liveObservationStatus, liveObservationPrice, onOpenOandaPreview, savedMetadata, oandaStatus }: DashboardProps) {
+export function Dashboard({ analysis, candleResult, dashboardState, serviceAvailability, manualRunState, manualRunResult, onManualRun, historyOpen = false, history, historyDetail, selectedHistoryRunKey = null, onOpenHistory, onCloseHistory, onRefreshHistory, historyLimit, onChangeHistoryLimit, onSelectHistoryRun, onViewHistoryInDashboard, savedOandaProvenance, savedSourceCandleTime, onReturnToMock, liveObservationStatus, liveObservationPrice, onOpenOandaPreview, savedMetadata, oandaStatus }: DashboardProps) {
   const state = dashboardState;
 
   return (
@@ -93,7 +95,7 @@ export function Dashboard({ analysis, candleResult, dashboardState, serviceAvail
         <AnalysisSidebar analysis={analysis} dashboardState={state} />
       </div>
       <MetricsFooter analysis={analysis} dashboardState={state} />
-      {onCloseHistory && onRefreshHistory && onSelectHistoryRun ? <AnalysisHistoryPanel open={historyOpen} history={history ?? null} detail={historyDetail ?? null} selectedRunKey={selectedHistoryRunKey} onClose={onCloseHistory} onRefresh={onRefreshHistory} onSelect={onSelectHistoryRun} onViewInDashboard={onViewHistoryInDashboard} /> : null}
+      {onCloseHistory && onRefreshHistory && onSelectHistoryRun ? <AnalysisHistoryPanel open={historyOpen} history={history ?? null} detail={historyDetail ?? null} selectedRunKey={selectedHistoryRunKey} onClose={onCloseHistory} onRefresh={onRefreshHistory} historyLimit={historyLimit} onChangeHistoryLimit={onChangeHistoryLimit} onSelect={onSelectHistoryRun} onViewInDashboard={onViewHistoryInDashboard} /> : null}
     </div>
   );
 }
