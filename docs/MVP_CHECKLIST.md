@@ -8,6 +8,11 @@
 - [x] Chart zoom, pan, price-scale adjustment, pinch zoom, double-click reset, and explicit Reset view.
 - [x] Optional OANDA scheduler mode remains explicitly opt-in; fixture remains the default.
 - [x] Experimental live OANDA observation lifecycle is validated: shared-subscriber, reconnect/backoff, H4 rollover, saved-candle immutability, and saved-report invariance all have passing regression tests (`src/service/liveStream.test.ts`). The feature remains opt-in and is still labeled experimental pending broader real-world use.
+- [x] Scheduled OANDA runs retry with backoff on transient network errors or a stale/not-yet-available H4 candle, without ever accepting data from the wrong H4 window (C4, `src/service/scheduledOandaRun.test.ts`).
+- [x] Live cross-market H4 confirmation (US500, US30, Russell 2000) is fetched from the existing OANDA account and classified against NAS100's own H4 structure (A1, `src/service/oandaRun.test.ts`).
+- [x] Scheduler outcomes trigger a local, informational-only OS notification via `node-notifier`; the test suite never triggers a real notification (A5, `src/service/schedulerNotifications.test.ts`, `src/service/scheduler/fixtureScheduler.test.ts`).
+- [ ] An event-risk data source is wired, but only as a validation spike (unofficial Forex Factory feed, A2) — not a resolved production provider. Entry authorization remains hard-blocked regardless (see below).
+- [x] A dedicated regression test proves the OANDA pipeline's entry-authorization clamp actually holds back a real computed BUY, not just a hypothetical one — verified by temporarily bypassing the clamp and confirming the test fails (`src/service/oandaRun.test.ts`).
 
 ## Foundation
 
@@ -50,17 +55,17 @@
 - [x] Phase 9: Manual and scheduled runs share one analysis path (`src/service/server.ts` scheduler `run` callback calls the same `executeManualOandaAnalysis`/`runSyntheticFixtureAnalysis` used by the manual routes).
 - [x] Phase 9: Scheduled runs are deduplicated by completed candle and recorded (`src/service/scheduler/fixtureScheduler.test.ts`, run-key uniqueness in `src/persistence/analysisRepository.test.ts`).
 - [x] Phase 9: Priority runs occur at 13:01 and 21:01 `America/Toronto` (`src/service/scheduler/fixtureScheduler.test.ts`, including DST-boundary cases).
-- [ ] Phase 10: History is stored locally with immutable report JSON and queryable summaries. SQLite storage and the `GET /runs`/`GET /runs/:runKey` query API are implemented and tested; a dedicated history search/filter screen and retention policy are not yet built (tracked as a follow-up).
+- [x] Phase 10: History is stored locally with immutable report JSON and queryable summaries. SQLite storage, the `GET /runs`/`GET /runs/:runKey` query API, and a client-side search/filter + adjustable record-count selector in `AnalysisHistoryPanel` are implemented and tested. A formal retention/back-up policy is not yet defined (tracked as a follow-up); run deletion/pruning is deliberately not implemented (would touch the immutable-records rule).
 - [x] Phase 10: SQLite migrations and restart persistence tests pass (`src/persistence/analysisRepository.test.ts`).
 
 ## Local product operations
 
-- [ ] Phase 11: Local notifications are opt-in, deduplicated, and logged.
-- [ ] Phase 12: PNG export is generated from a rendered data-bound 16:9 view.
-- [ ] Phase 12: Exported PNG values match the source report and contain no reference-image pixels.
-- [ ] Phase 13: Provider adapter validates symbol mapping, timestamps, freshness, and health.
-- [ ] Phase 13: US500 and US30 are primary confirmation; Russell 2000 is complementary.
-- [ ] Phase 14: Data-health error states explain blocked action and never display stale data as actionable.
+- [ ] Phase 11: Local notifications are opt-in, deduplicated, and logged. Implemented at a smaller scope: `node-notifier` fires on every scheduler outcome (`created`/`blocked`/`failed`) with no user-configurable opt-in thresholds, dedup, or audit log beyond existing SQLite history (`src/service/schedulerNotifications.test.ts`).
+- [ ] Phase 12: PNG export is generated from a rendered data-bound 16:9 view. Implemented at a smaller scope: the H4 chart panel itself exports as PNG on demand (client-side, `takeScreenshot()`), not a dedicated 16:9 setup-card view with metadata manifest.
+- [x] Phase 12: Exported PNG values match the source report and contain no reference-image pixels (the export is a direct canvas screenshot of the already-rendered, report-driven chart).
+- [x] Phase 13: Provider adapter validates symbol mapping, timestamps, freshness, and health for NAS100 and cross-market instruments (`src/providers/oanda/oandaProvider.test.ts`, `src/service/oandaRun.test.ts`).
+- [x] Phase 13: US500 and US30 are primary confirmation; Russell 2000 is complementary (`src/domain/setupScore.ts`, `src/domain/patienceFilter.ts`, live-wired in `src/service/oandaRun.ts`'s cross-market classification).
+- [ ] Phase 14: Data-health error states explain blocked action and never display stale data as actionable. A passive OANDA configuration-status badge exists (`OandaStatusBadge`) as a modest starting point; the full failure-state matrix, manual retry, and error history are not implemented.
 - [ ] Phase 15: Windows package preserves local history and works with mock data offline.
 - [ ] Phase 16: Optional AI explanation cannot change deterministic numeric facts or action.
 
@@ -68,13 +73,13 @@
 
 - [ ] Dashboard matches the approved visual direction without using either reference image in the interface.
 - [x] Chart uses structured OHLC data rather than an illustrative chart image.
-- [ ] Dashboard and report remain consistent because both render the same validated analysis report.
-- [ ] Completed-candle protection works in unit and end-to-end tests.
-- [ ] Patience Filter works and cannot be overridden by Setup Score.
-- [ ] Minimum 2:1 reward-to-risk protection works.
-- [ ] Stale, missing, or invalid data defaults to NO TRADE.
-- [ ] Analysis history is stored locally.
-- [ ] Scheduled runs are recorded and duplicate-safe.
-- [ ] Local notifications work under user-controlled settings.
-- [ ] PNG export works from the rendered dashboard state.
-- [ ] No trading execution capability exists in code, dependencies, routes, or UI.
+- [x] Dashboard and report remain consistent because both render the same validated analysis report (`src/application/buildSwingReport.test.ts`).
+- [x] Completed-candle protection works in unit and end-to-end tests (`src/domain/patienceFilter.test.ts`, `src/service/oandaRun.test.ts`, `src/service/scheduler/fixtureScheduler.test.ts`).
+- [x] Patience Filter works and cannot be overridden by Setup Score (`src/domain/scoredDecision.test.ts`).
+- [x] Minimum 2:1 reward-to-risk protection works (`src/domain/tradePlan.test.ts`, `src/domain/patienceFilter.test.ts`).
+- [x] Stale, missing, or invalid data defaults to NO TRADE (`src/domain/analysis.test.ts`, `src/domain/patienceFilter.test.ts`).
+- [x] Analysis history is stored locally (`src/persistence/analysisRepository.test.ts`).
+- [x] Scheduled runs are recorded and duplicate-safe (`src/service/scheduler/fixtureScheduler.test.ts`).
+- [ ] Local notifications work under user-controlled settings (notifications fire, but there are no user-controlled settings yet — see Phase 11 above).
+- [x] PNG export works from the rendered dashboard state (chart panel only — see Phase 12 above).
+- [x] No trading execution capability exists in code, dependencies, routes, or UI (ADR-008).

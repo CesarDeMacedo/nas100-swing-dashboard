@@ -2,7 +2,7 @@
 
 ## Current implementation boundary
 
-Manual OANDA analysis, immutable saved display snapshots, saved-dashboard review, Chart Preview, and optional fixture-default/OANDA-opt-in scheduling are implemented. H4 and Daily inputs remain separate and completed-candle safety is required. Chart navigation preserves the user viewport until explicit Reset view. Cross-market and event-risk data remain unavailable. Live OANDA observation remains experimental (opt-in, not the default), but shared-subscriber, reconnect/backoff, H4 rollover, saved-candle immutability, and saved-report invariance lifecycle tests are now complete (`src/service/liveStream.test.ts`). The browser never connects directly to OANDA.
+Manual OANDA analysis, immutable saved display snapshots, saved-dashboard review, Chart Preview, PNG export (chart-only), Analysis History search/filter, an OANDA status badge, and optional fixture-default/OANDA-opt-in scheduling are implemented. H4 and Daily inputs remain separate and completed-candle safety is required. Chart navigation preserves the user viewport until explicit Reset view. Both the manual and scheduled OANDA paths fetch retry-bounded H4 candles (C4), live cross-market H4 confirmation for US500/US30/Russell 2000 from the same OANDA account (A1), and a Forex Factory event-risk validation spike (A2); scheduler outcomes trigger a local OS notification via `node-notifier` (A5). Entry authorization from the OANDA pipeline remains hard-blocked regardless (`safetyConstrainedState` in `src/service/oandaRun.ts`, see `docs/DECISIONS.md` ADR-016) until the event-risk provider question is resolved for production, not just validated as a spike. Live OANDA observation remains experimental (opt-in, not the default), but shared-subscriber, reconnect/backoff, H4 rollover, saved-candle immutability, and saved-report invariance lifecycle tests are now complete (`src/service/liveStream.test.ts`). The browser never connects directly to OANDA.
 
 Each phase is an independently reviewable request. Do not start the next phase without user approval of the current stop point.
 
@@ -192,6 +192,8 @@ The dashboard now exposes a compact Analysis history overlay using only `GET /ru
 
 ## Phase 10: SQLite history
 
+SQLite storage and the `GET /runs`/`GET /runs/:runKey` query API were implemented earlier (see "Persistence milestone" and "Read-only browser history milestone" below). A client-side search/filter (action/direction/status/run key text match) and an adjustable record-count selector (10/25/50/100) were added to `AnalysisHistoryPanel`, reusing the existing `GET /runs?limit=` capability — both read-only. Run deletion/pruning was deliberately not implemented: it would touch the "preserve immutable persisted reports, never overwrite historical records" rule and wasn't scoped with the extra scrutiny that deserves.
+
 - Objective: persist immutable report history and run records locally.
 - Scope: database migrations, repositories, history screen, and retention/back-up policy.
 - Likely files: `apps/service/src/db/`, migrations, `apps/web/src/features/history/`.
@@ -202,8 +204,11 @@ The dashboard now exposes a compact Analysis history overlay using only `GET /ru
 - Risks: native SQLite dependency and application-data location.
 - Still mocked: live provider, system notifications, export.
 - Stop point: inspect schema, stored JSON, and history retention behavior.
+- Remaining: a formal retention/back-up policy is still undefined.
 
-## Phase 11: Notifications
+## Phase 11: Notifications (implemented, modest scope)
+
+`node-notifier` (A5) delivers a local OS notification for each scheduler-evaluated slot outcome — `created`, `blocked`, or `failed` (never `already_exists`, since nothing changed) — via `src/service/schedulerNotifications.ts`, wired through an optional `notify` hook on `FixtureScheduler` (`src/service/scheduler/fixtureScheduler.ts`). Messages are deliberately informational only ("new report ready", "could not confirm the expected candle", "run failed") and never imply an entry action. This is a smaller scope than the phase originally specified: there is no preference UI, no in-app notification center, no user-configurable opt-in thresholds, and no deduplication/audit log beyond the scheduler's own `lastRunResult`/SQLite history. The test suite always injects a no-op `notify` so it never triggers a real OS notification.
 
 - Objective: deliver deduplicated local notification summaries for completed runs.
 - Scope: preference UI, in-app notification center, optional Windows adapter, and audit log.
@@ -215,8 +220,11 @@ The dashboard now exposes a compact Analysis history overlay using only `GET /ru
 - Risks: Windows permissions and notification reliability.
 - Still mocked: live provider and export.
 - Stop point: approve notification copy and opt-in defaults.
+- Remaining: preference UI, in-app notification center, opt-in thresholds, and a deduplication/audit log are not implemented.
 
-## Phase 12: PNG export
+## Phase 12: PNG export (implemented, modest scope)
+
+The H4 chart panel exports as a PNG on demand, client-side, using `lightweight-charts`' native `takeScreenshot()` (already a dependency; no new package added) to capture a real `HTMLCanvasElement`, then triggers a browser download. `FinancialChart` forwards a ref exposing `exportPng()`. No server involvement, no OANDA contact. This is a smaller scope than the phase originally specified: it exports the chart panel only, not a dedicated 16:9 setup-card export view/route, with no metadata manifest and no export history.
 
 - Objective: export a data-bound 16:9 setup card as PNG.
 - Scope: dedicated export route/view, chart-ready wait, local file writing, and export history.
@@ -228,18 +236,21 @@ The dashboard now exposes a compact Analysis history overlay using only `GET /ru
 - Risks: canvas capture and fonts across browser/packaged runtime.
 - Still mocked: live provider only.
 - Stop point: inspect exported sample at target resolution.
+- Remaining: a dedicated 16:9 setup-card export view, metadata manifest, and export history are not implemented — only the chart panel itself exports.
 
 ## Phase 13: Market-data provider integration
 
 Read-only OANDA v20 foundation is implemented but remains isolated from broader Phase 13 integration. `src/providers/oanda/` parses environment-only configuration, uses a GET-only Bearer client, normalizes account instruments and midpoint H4 candles, and preserves OANDA's `complete` flag. Local service endpoints expose configuration status, explicit verification, explicit-instrument candle retrieval, and a manual completed-candle report path without startup calls, dashboard use, or scheduler use. `OANDA_NAS100_INSTRUMENT` is deliberately not guessed; account discovery returns candidates only. `.env.example` documents local placeholders. No order, trade, position, or account-configuration code exists.
 
-Manual OANDA analysis is implemented as a separate `POST /runs/manual-oanda` path. It requests 250 midpoint H4 candles and 250 Daily candles, excludes all open candles, and keeps H4 structure/decision inputs separate from Daily Regime inputs. Both source timestamps are persisted with the immutable local report, while H4 remains the run identity. The path is GET-only toward OANDA and manual only; no dashboard or scheduler integration exists. Cross-market and event-risk inputs are explicitly unavailable, so the resulting report cannot authorize an entry. No trade execution exists.
+Manual OANDA analysis is implemented as a separate `POST /runs/manual-oanda` path. It requests 250 midpoint H4 candles and 250 Daily candles, excludes all open candles, and keeps H4 structure/decision inputs separate from Daily Regime inputs. Both source timestamps are persisted with the immutable local report, while H4 remains the run identity. The path is GET-only toward OANDA and manual only; no dashboard or scheduler integration exists. Cross-market confirmation (US500/US30/Russell 2000) is now live, fetched from the same OANDA account and classified against NAS100's own H4 structure (A1, `src/service/oandaRun.ts`'s `fetchCrossMarketH4`); event-risk is a Forex Factory validation spike, not a resolved production input (A2, `src/service/forexFactoryEventRisk.ts`). The resulting report still cannot authorize an entry regardless of what either input computes — `safetyConstrainedState` keeps entry authorization hard-blocked until the event-risk provider question is resolved for production (see `docs/DECISIONS.md` ADR-016). No trade execution exists.
+
+The scheduler's OANDA fetch retries with backoff (`[2000, 5000, 10000]` ms, configurable) on transient network errors or a stale/not-yet-available H4 candle, capturing the expected H4 window once at the start of the retry sequence so a retry can never silently accept data from the wrong window; a candle from a newer window than expected aborts immediately instead of retrying (C4, `src/service/scheduledOandaRun.ts`). Exhausted retries now persist a real `FAILED` run (previously only held in memory, lost on restart).
 
 New manual OANDA reports derive deterministic support, resistance, preferred-entry, and informational invalidation levels from completed H4 confirmed swings with centralized ATR buffers. Historical reports are not changed. Dashboard selection of a saved OANDA report is implemented (see below).
 
 Saved OANDA reports with a non-sensitive display snapshot can now be opened from History in the existing dashboard layout for the current browser session. This is historical review only: mock data remains the refresh default, and neither the scheduler nor browser starts OANDA loading automatically.
 
-The in-process scheduler now defaults to `fixture` and supports an explicit `oanda` provider mode through `NAS100_DASHBOARD_SCHEDULER_PROVIDER`. OANDA scheduling is read-only, uses the same manual pipeline and existing Toronto slots, and runs only while the local service is active. Cross-market and event-risk remain unavailable.
+The in-process scheduler now defaults to `fixture` and supports an explicit `oanda` provider mode through `NAS100_DASHBOARD_SCHEDULER_PROVIDER`. OANDA scheduling is read-only, uses the same manual pipeline and existing Toronto slots, and runs only while the local service is active. Cross-market confirmation is live; event-risk is a validation spike (see above). Scheduler outcomes (`created`/`blocked`/`failed`) trigger a local, informational-only OS notification via `node-notifier` (A5, `src/service/schedulerNotifications.ts`).
 
 Saved OANDA dashboard review can optionally open a local SSE observation connection for OANDA v20 pricing-stream updates and the current open H4 candle. It never changes the persisted report or strategy decision, starts only for an active saved OANDA view, and does not create a browser-to-OANDA connection.
 

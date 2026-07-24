@@ -2,7 +2,7 @@
 
 ## Current implementation status
 
-The application is local-first and analysis-only. React/Vite/TypeScript renders a mock-default dashboard while the Node service owns read-only OANDA access and SQLite immutable reports. OANDA credentials remain server-side. Manual OANDA analysis uses separate completed H4 and Daily inputs: Daily is for Daily Regime, H4 is for structure and decisions. Saved reports include non-sensitive immutable display snapshots and can be opened from Analysis History. Chart Preview is on-demand and read-only. The scheduler is in-process, defaults to fixture mode, and OANDA mode is explicit opt-in. Cross-market and event-risk feeds are unavailable. The browser never connects to OANDA.
+The application is local-first and analysis-only. React/Vite/TypeScript renders a mock-default dashboard while the Node service owns read-only OANDA access and SQLite immutable reports. OANDA credentials remain server-side. Manual OANDA analysis uses separate completed H4 and Daily inputs: Daily is for Daily Regime, H4 is for structure and decisions. Saved reports include non-sensitive immutable display snapshots and can be opened from Analysis History. Chart Preview is on-demand and read-only, and can export itself as a PNG. The scheduler is in-process, defaults to fixture mode, OANDA mode is explicit opt-in, and its OANDA fetch retries with backoff without ever accepting a stale/wrong-window H4 candle. Cross-market confirmation (US500/US30/Russell 2000) is live, fetched from the same OANDA account. Event-risk is a validation spike (unofficial feed), not a resolved production input; entry authorization from the OANDA pipeline stays hard-blocked regardless of either input until that spike is resolved (see `docs/DECISIONS.md` ADR-016). Scheduler outcomes trigger a local, informational-only OS notification. The browser never connects to OANDA.
 
 The candlestick chart supports zoom, horizontal pan, price-scale adjustment, pinch zoom, double-click scale reset, and explicit Reset view. Its instance is stable for a chart identity; live/overlay updates update the series without fitting or replacing the user viewport. Live observation remains an opt-in, experimental feature (not the default); lifecycle coverage for shared subscribers, reconnect/backoff, H4 rollover, saved-candle immutability, and saved-report invariance is now complete (`src/service/liveStream.test.ts`).
 
@@ -115,7 +115,7 @@ Back up the database before destructive migrations. Database files, exports, and
 
 ## Provider abstraction
 
-Use a provider interface per data category: OHLC, market snapshots, event risk, and macro context. Providers normalize symbols, timestamp timezone, precision, market-session status, and freshness into shared types. A `MockMarketDataProvider` is the first implementation. Every provider response records provider name, source timestamp, received timestamp, latency, freshness state, and error details. Provider credentials must remain local service configuration, never browser bundles. US500 and US30 are the primary cross-market confirmation instruments; Russell 2000 is complementary confirmation in the MVP. The live market-data provider remains unresolved.
+Use a provider interface per data category: OHLC, market snapshots, event risk, and macro context. Providers normalize symbols, timestamp timezone, precision, market-session status, and freshness into shared types. A `MockMarketDataProvider` is the first implementation. Every provider response records provider name, source timestamp, received timestamp, latency, freshness state, and error details. Provider credentials must remain local service configuration, never browser bundles. US500 and US30 are the primary cross-market confirmation instruments; Russell 2000 is complementary confirmation in the MVP. NAS100 and cross-market are both live via the same OANDA v20 account — no separate provider was needed. The event-risk provider remains unresolved for production; a Forex Factory validation spike is wired for observation only.
 
 ## Error handling and stale-data safeguards
 
@@ -136,6 +136,8 @@ Safety gates run before score display or action selection:
 Notifications are local-only. Begin with an in-app notification center; later add a platform adapter for Windows system notifications. Notify only after a persisted, validated report passes user-configured thresholds and deduplicate by run id. Failed notifications do not invalidate the analysis.
 
 PNG export captures a dedicated, data-bound 16:9 export view of the dashboard after fonts and chart drawing are ready. It uses the rendered React/Lightweight Charts output, not image-generation or a template screenshot. The export manifest records the report id, schema version, export time, and error state.
+
+Implemented so far, at a smaller scope than this spec: notifications fire directly via `node-notifier` (`src/service/schedulerNotifications.ts`) on every scheduler outcome, with no in-app center, no user-configured thresholds, and no dedicated dedup/audit log beyond existing scheduler status and SQLite history. PNG export captures the chart panel only (`lightweight-charts`' native `takeScreenshot()`), not a dedicated 16:9 export view, and writes no manifest. Both remain open follow-ups toward the full spec above.
 
 ## Test strategy
 

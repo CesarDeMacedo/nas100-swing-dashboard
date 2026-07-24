@@ -48,7 +48,7 @@ The deterministic pipeline includes indicators, Daily Regime, H4 Structure, Trad
 
 Manual OANDA analysis fetches separate H4 and Daily datasets. Daily candles feed Daily Regime only; H4 candles feed H4 Structure and decision logic. Open candles are excluded from confirmed reports. OANDA support, resistance, entry, and invalidation levels are calculated from completed H4 swings. Saved OANDA reports contain immutable, non-sensitive display snapshots and eligible records can be opened from Analysis History in the main dashboard.
 
-OANDA Chart Preview is an on-demand, chart-only visual tool and does not run strategy analysis. The scheduler is local and in-process, uses the approved America/Toronto schedule, and defaults to the fixture provider.
+OANDA Chart Preview is an on-demand, chart-only visual tool and does not run strategy analysis; it can export itself as a PNG. The scheduler is local and in-process, uses the approved America/Toronto schedule, and defaults to the fixture provider. The scheduler's OANDA fetch retries with backoff on transient errors or a stale/not-yet-available H4 candle, without ever accepting data from the wrong H4 window (C4). Both the manual and scheduled OANDA paths fetch live cross-market H4 confirmation (US500/US30/Russell 2000, same OANDA account, A1) and an event-risk validation spike (unofficial Forex Factory feed, A2, not a production commitment). Entry authorization from the OANDA pipeline stays hard-blocked regardless of either input — see `docs/DECISIONS.md` ADR-016 — until a production-grade event-risk provider is resolved. Scheduler outcomes trigger a local, informational-only OS notification via `node-notifier` (A5).
 
 The shared candlestick chart supports zoom, drag-to-pan, price-scale adjustment, pinch zoom, double-click scale reset, and explicit Reset view. Chart identity is stable so live/overlay updates do not reset the user viewport.
 
@@ -65,8 +65,9 @@ The live OANDA feature is opt-in and still labeled experimental. Its design is a
 Steps 1-5 of the original validation sequence (manual OANDA report after H4 close, saved-view review, mock-default regression check, live-stream lifecycle tests) are complete. Standing items:
 
 1. Enabling OANDA scheduler mode in production remains an explicit, separate decision — not advanced without direct approval.
-2. Future milestones are cross-market confirmation, event-risk data, notifications, PNG export, Windows packaging, and optional AI narrative (`docs/IMPLEMENTATION_PLAN.md` phases 11-13, 15-16) — all remain out of scope until explicitly approved.
-3. A batch of smaller improvements (test coverage, doc hygiene, live-stream structural cleanup, data-health states, history screen, PNG export) may be in progress or completed under separate approval — check recent commits and `git log` rather than assuming this file is exhaustive.
+2. Cross-market confirmation (A1), scheduler retry/backoff (C4), scheduler notifications (A5), and an event-risk validation spike (A2) are implemented — see `docs/DECISIONS.md` ADR-014/ADR-016. Entry authorization from the OANDA pipeline stays hard-blocked regardless of any of these inputs; do not loosen `safetyConstrainedState` in `src/service/oandaRun.ts` without explicit, separate approval — it's the sole entry gate for that pipeline (`enforceAnalysisSafety` only runs client-side).
+3. Remaining future milestones: a production-grade event-risk provider (to replace the A2 spike), Windows packaging, and optional AI narrative (`docs/IMPLEMENTATION_PLAN.md` phases 13, 15-16) — all remain out of scope until explicitly approved.
+4. A batch of smaller improvements (test coverage, doc hygiene, live-stream structural cleanup, OANDA status badge, history search/filter, PNG export) may be in progress or completed under separate approval — check recent commits and `git log` rather than assuming this file is exhaustive.
 
 # Git Workflow
 

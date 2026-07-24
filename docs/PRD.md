@@ -173,8 +173,8 @@ Required visual qualities: 16:9 composition, dark navy/black background, orange 
 
 ## 17. Open decisions
 
-- Final licensed market-data provider.
-- Exact NAS100 symbol and timezone handling.
-- Whether macro/news data is included in the first live release.
-- Notification mechanism on Windows.
+- Final licensed macro/event-risk data provider (NAS100 and cross-market US500/US30/Russell 2000 are resolved: same OANDA v20 account, no separate provider — see `docs/DECISIONS.md` ADR-014). An unofficial Forex Factory feed is wired as a validation spike only, not a production commitment.
+- Exact NAS100 symbol and timezone handling — resolved (`America/Toronto`, explicit `OANDA_NAS100_INSTRUMENT`).
+- Whether macro/news data is included in the first live release — a validation spike exists to inform this decision, not yet resolved for production.
+- Notification mechanism on Windows — resolved for the notification *library* (`node-notifier`, running from the existing Node service); Windows *packaging* technology (Tauri vs. Electron) remains open, see `docs/DECISIONS.md` ADR-011.
 - Backtesting methodology and outcome labels.

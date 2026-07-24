@@ -80,9 +80,15 @@ Minimum reward-to-risk is 2.0. Setup Score grades are `0-49 D`, `50-59 C`, `60-6
 
 ## ADR-014: Required context and confirmation instruments
 
-Status: Accepted.
+Status: Accepted; cross-market provider resolved, event-risk provider still a validation spike.
 
-Missing macro or event-risk data results in WAIT or NO_TRADE. US500 and US30 are primary cross-market confirmation instruments; Russell 2000 is complementary in the MVP. The market-data provider remains unresolved.
+Missing macro or event-risk data results in WAIT or NO_TRADE. US500 and US30 are primary cross-market confirmation instruments; Russell 2000 is complementary in the MVP. The cross-market provider question is resolved: `SPX500_USD`, `US30_USD`, and `US2000_USD` are confirmed available on the same OANDA v20 account already used for NAS100 (verified via a one-off account-instrument check), so no separate provider was needed — see `src/service/oandaRun.ts`'s `fetchCrossMarketH4`. The event-risk provider remains unresolved for production; an unofficial Forex Factory feed (`src/service/forexFactoryEventRisk.ts`) is wired as a validation spike only, to observe whether real event-risk data changes computed decisions before committing to a paid/stable source.
+
+## ADR-016: OANDA manual/scheduled pipeline entry authorization stays clamped pending event-risk resolution
+
+Status: Accepted, temporary — revisit once ADR-014's event-risk provider question is resolved.
+
+`enforceAnalysisSafety` (`src/domain/safety.ts`, ADR-015) only runs on the browser/chart-adapter side (`src/components/chart/chartAdapter.ts`); the OANDA server pipeline (`src/service/oandaRun.ts`) never calls it. The sole entry-authorization gate for that pipeline is `safetyConstrainedState`, which unconditionally forces `action` to `WAIT`-family, `isActionable: false`, and clears entry/stop/target fields regardless of what the underlying deterministic pipeline (`buildDashboardState`) computes. This was originally redundant — with cross-market and event-risk both hardcoded `UNAVAILABLE`/`unknown`, the Patience Filter alone already prevented `allowed` status — but ceased to be redundant once A1 made cross-market confirmation real. The clamp is intentionally kept in place regardless: as long as event-risk is a validation spike (ADR-014) rather than a resolved production input, no realistic combination of inputs may authorize BUY/SELL from this pipeline. `src/service/oandaRun.test.ts` ("proves the safety clamp actually holds something back") constructs a fully realistic scenario where the underlying pipeline genuinely computes `BUY`, and asserts the clamp still forces `WAIT` — verified by temporarily bypassing the clamp and confirming that exact test fails.
 
 ## ADR-015: Versioned Zod authority and explicit safety normalization
 
@@ -94,11 +100,12 @@ Safety enforcement converts structurally valid but unsafe BUY/SELL input to WAIT
 
 ## Unresolved decisions
 
-- NAS100 itself is resolved (OANDA v20, read-only). Select a licensed proxy-market/cross-market data source (US500, US30, Russell 2000), including symbol mapping, licensing, rate limits, and historical access.
-- Location and entry-trigger ATR thresholds are resolved (Phase 6B: 0.35 ATR zone/EMA tolerance, 0.05 ATR trigger, 0.25 ATR stop buffer; Phase 5B: 0.10 ATR breakout buffer). Still open: cross-market alignment rules, first-retest rules, event-blocking rules, and data-freshness age thresholds — all depend on the cross-market/event-risk provider above.
-- Select macro and event-risk data sources for the first live release.
+- NAS100 and cross-market (US500, US30, Russell 2000) are both resolved: all four instruments are available on the same OANDA v20 account, no separate provider or licensing needed (ADR-014).
+- Location and entry-trigger ATR thresholds are resolved (Phase 6B: 0.35 ATR zone/EMA tolerance, 0.05 ATR trigger, 0.25 ATR stop buffer; Phase 5B: 0.10 ATR breakout buffer). Still open: cross-market alignment rules, first-retest rules, event-blocking rules, and data-freshness age thresholds — event-blocking specifically has only a provisional placeholder (High-impact USD event within +/-60min, see `src/service/forexFactoryEventRisk.ts`), not a resolved rule.
+- Select a production-grade macro/event-risk data source for the first live release. A validation spike (unofficial Forex Factory feed) is wired for observation only — see ADR-014, ADR-016. Entry authorization from the OANDA pipeline remains hard-blocked regardless of what this spike returns.
 - Define outcome labels and methodology for historical setup evaluation/backtesting.
-- Select Windows notification adapter and packaging technology after proof-of-concept evidence (see ADR-011, still unresolved).
+- Select Windows packaging technology after proof-of-concept evidence (see ADR-011, still unresolved). The notification *adapter* question is resolved separately: `node-notifier` is in production use for scheduler outcomes (see CHANGELOG), independent of packaging, since it runs from the existing Node service rather than a packaged native shell.
+
 # Current product boundary
 
-The implementation remains analysis-only and local-first. OANDA is read-only with server-side credentials; there is no browser-to-OANDA connection or trade execution. H4 and Daily inputs are separate, completed-candle safety is authoritative, saved OANDA reports are immutable, and Chart Preview is on-demand only. The fixture scheduler remains the default; OANDA scheduling is opt-in. Cross-market/event-risk feeds are unavailable, and live OANDA observation remains experimental pending lifecycle tests.
+The implementation remains analysis-only and local-first. OANDA is read-only with server-side credentials; there is no browser-to-OANDA connection or trade execution. H4 and Daily inputs are separate, completed-candle safety is authoritative, saved OANDA reports are immutable, and Chart Preview is on-demand only. The fixture scheduler remains the default; OANDA scheduling is opt-in. Cross-market confirmation is live (same OANDA account); event-risk is a validation spike only (unofficial feed, not a production commitment); live OANDA observation remains experimental pending broader real-world use. Entry authorization from the OANDA pipeline remains hard-blocked pending event-risk resolution (ADR-016), independent of what any individual input computes.

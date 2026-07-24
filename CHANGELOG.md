@@ -1,5 +1,54 @@
 # Changelog
 
+## Safety-Clamp Regression Proof
+
+- Added a dedicated test constructing a fully realistic scenario (confirmed bullish H4 pullback, cross-market CONFIRMING, clean event-risk, R:R >= 2.0) where the underlying pipeline genuinely computes `BUY`, then asserts the OANDA pipeline's `runManualOandaAnalysis` still returns WAIT.
+- Verified by temporarily bypassing the safety clamp and confirming the test fails with the real `BUY` leaking through, then reverting — the same discipline already used for the C4/A1/A2 timeout tests.
+
+## Event-Risk Validation Spike (A2)
+
+- Added a Forex Factory event-risk adapter (`src/service/forexFactoryEventRisk.ts`): unofficial, undocumented feed, no auth, wired as a validation spike to observe whether real event-risk data changes computed decisions, not as a production provider commitment.
+- Fail-safe by construction: any network error, timeout, non-200, malformed JSON, or non-array payload degrades to "not fetched," falling back to the existing UNAVAILABLE placeholder exactly as before this feature.
+- BUY/SELL remains unconditionally blocked by the existing OANDA-pipeline safety clamp regardless of what this spike returns; only the clamp's now-inaccurate "event-risk unavailable" wording was corrected.
+
+## Live Cross-Market Confirmation (A1)
+
+- Both the manual and scheduled OANDA paths now fetch live H4 candles for US500, US30, and Russell 2000 from the existing OANDA account (no new provider needed — confirmed via a one-off account-instrument check) and classify each as confirming/contradicting/neutral against NAS100's own H4 structure.
+- Fetches are best-effort, timeout-bounded, and outside the C4 window-retry loop: a failure or hang for one cross-market instrument degrades only that instrument to UNAVAILABLE, it never blocks or retries the NAS100 run.
+- BUY/SELL remains unconditionally blocked by the existing OANDA-pipeline safety clamp regardless of cross-market confirmation.
+
+## Scheduler Outcome Notifications (A5)
+
+- Added a local OS notification (`node-notifier`) for every scheduler-evaluated slot outcome — `created`, `blocked`, or `failed` — via `src/service/schedulerNotifications.ts`.
+- Messages are purely informational ("new report ready," "could not confirm the expected candle," "run failed") and never imply an entry action.
+- The test suite always injects a no-op notify hook, so it never triggers a real OS notification.
+
+## Scheduled OANDA Retry/Backoff (C4)
+
+- The scheduler's OANDA fetch now retries with backoff (`[2000, 5000, 10000]` ms, configurable) on a transient network error or a stale/not-yet-available H4 candle.
+- The expected H4 window is captured once at the start of the retry sequence and never recomputed mid-retry, so a retry can never silently accept data from the wrong window; a candle from a newer window than expected aborts immediately instead of retrying.
+- Exhausted retries now persist a real `FAILED` run (previously only held in memory, lost on restart). The manual `/runs/manual-oanda` endpoint and `OandaClient`/`OandaProvider` remain single-attempt and untouched.
+
+## PNG Chart Export
+
+- Added on-demand PNG export of the H4 chart panel using `lightweight-charts`' native screenshot capability; client-side only, no server involvement.
+- Modest scope: exports the chart panel itself, not a dedicated 16:9 setup-card export view with metadata manifest.
+
+## Analysis History Search and Record Count
+
+- Added a client-side text filter (action/direction/status/run key) and an adjustable record-count selector (10/25/50/100) to the Analysis History panel, reusing the existing `GET /runs?limit=` capability.
+- Both are read-only; run deletion/pruning remains deliberately out of scope.
+
+## OANDA Status Badge
+
+- Added a passive `OandaStatusBadge` in the dashboard header surfacing OANDA configuration status (not configured / invalid / unavailable / healthy) once the local service is confirmed available, without requiring a manual OANDA action first.
+
+## Scheduler Failure Tracking and Live-Stream Hardening
+
+- Added an in-memory `consecutiveFailures` counter to scheduler status, incremented on each failed run and reset on any other outcome.
+- Fixed two live-stream bugs found during lifecycle testing: a late-subscriber replay gap and a reconnect-backoff bypass.
+- Fixed a display-only gap where opening a saved OANDA analysis skipped completed H4 candles between the saved snapshot and the current open candle.
+
 ## Saved OANDA Live Observation
 
 - Added local SSE observation of live OANDA price and open H4 candle only while reviewing a saved OANDA analysis.

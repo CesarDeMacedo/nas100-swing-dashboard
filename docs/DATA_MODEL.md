@@ -105,7 +105,7 @@ The prepared categories are trend, structure, momentum, location, cross-market, 
 
 ### ApplicationSettings
 
-Settings include version, `America/Toronto`, `H4`, scheduled review times, minimum reward-to-risk, stale threshold, preferred instrument, notification flag, and optional export directory. Minimum reward-to-risk cannot be below 2.0. Scheduling and notifications remain unimplemented.
+Settings include version, `America/Toronto`, `H4`, scheduled review times, minimum reward-to-risk, stale threshold, preferred instrument, notification flag, and optional export directory. Minimum reward-to-risk cannot be below 2.0. Scheduling is implemented (fixture and OANDA modes); scheduler-outcome notifications are implemented via `node-notifier` but are unconditional, not yet wired to this settings schema's notification flag.
 
 ## Validation pipeline
 
