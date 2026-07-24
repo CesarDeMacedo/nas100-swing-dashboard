@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createLocalService, loadProjectEnvironmentForServiceCli, LOCAL_SERVICE_HOST } from './server';
-import type { SchedulerStatus } from './scheduler/fixtureScheduler';
+import type { SchedulerRunResult, SchedulerStatus } from './scheduler/fixtureScheduler';
 
 type RunningService = {
   stop: () => Promise<void>;
@@ -25,9 +25,10 @@ const clearOandaEnvironment = () => {
   for (const key of oandaEnvironmentKeys) delete process.env[key];
 };
 
-const startService = async (options: { schedulerEnabled?: boolean; schedulerProvider?: 'fixture' | 'oanda'; schedulerIntervalMs?: number; schedulerNow?: () => Date; oandaEnvironment?: NodeJS.ProcessEnv; oandaFetch?: typeof fetch; scheduledOandaRetryDelaysMs?: number[] } = {}): Promise<RunningService> => {
+const startService = async (options: { schedulerEnabled?: boolean; schedulerProvider?: 'fixture' | 'oanda'; schedulerIntervalMs?: number; schedulerNow?: () => Date; oandaEnvironment?: NodeJS.ProcessEnv; oandaFetch?: typeof fetch; scheduledOandaRetryDelaysMs?: number[]; notifySchedulerOutcome?: (result: SchedulerRunResult) => void } = {}): Promise<RunningService> => {
   const directory = mkdtempSync(join(tmpdir(), 'nas100-service-'));
-  const service = createLocalService({ databasePath: join(directory, 'history.sqlite'), port: 0, schedulerEnabled: options.schedulerEnabled ?? false, schedulerProvider: options.schedulerProvider, schedulerIntervalMs: options.schedulerIntervalMs, schedulerNow: options.schedulerNow, oandaEnvironment: options.oandaEnvironment, oandaFetch: options.oandaFetch, scheduledOandaRetryDelaysMs: options.scheduledOandaRetryDelaysMs });
+  // Always inject a no-op unless a test overrides it — the scheduler must never trigger a real OS notification while running the test suite.
+  const service = createLocalService({ databasePath: join(directory, 'history.sqlite'), port: 0, schedulerEnabled: options.schedulerEnabled ?? false, schedulerProvider: options.schedulerProvider, schedulerIntervalMs: options.schedulerIntervalMs, schedulerNow: options.schedulerNow, oandaEnvironment: options.oandaEnvironment, oandaFetch: options.oandaFetch, scheduledOandaRetryDelaysMs: options.scheduledOandaRetryDelaysMs, notifySchedulerOutcome: options.notifySchedulerOutcome ?? (() => {}) });
   const health = await service.start();
   const running = { stop: service.stop, schedulerStatus: service.schedulerStatus, baseUrl: `http://${LOCAL_SERVICE_HOST}:${health.port}`, directory };
   services.push(running);

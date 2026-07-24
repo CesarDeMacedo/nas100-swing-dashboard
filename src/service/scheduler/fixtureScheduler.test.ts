@@ -80,6 +80,34 @@ describe('FixtureScheduler', () => {
     expect(scheduler.status().lastEvaluatedSlot).toBe('2026-06-15:13:01');
   });
 
+  it('calls notify with the result of every evaluated slot, including thrown-error failures', async () => {
+    // Filtering out 'already_exists' (nothing changed, no notification wanted) is
+    // notifySchedulerOutcome's job (see schedulerNotifications.test.ts) — the scheduler
+    // itself just reports what happened for every slot it evaluates.
+    const notify = vi.fn();
+    let outcome: 'created' | 'blocked' | 'already_exists' = 'created';
+    const scheduler = new FixtureScheduler({ enabled: true, run: async () => ({ outcome, runKey: 'fixture-key' }), log: () => undefined, notify });
+
+    await scheduler.evaluate(weekdayAfternoon);
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(notify).toHaveBeenLastCalledWith(expect.objectContaining({ outcome: 'created' }));
+
+    outcome = 'blocked';
+    await scheduler.evaluate(weekdayEvening);
+    expect(notify).toHaveBeenCalledTimes(2);
+    expect(notify).toHaveBeenLastCalledWith(expect.objectContaining({ outcome: 'blocked' }));
+
+    outcome = 'already_exists';
+    await scheduler.evaluate(sundayEvening);
+    expect(notify).toHaveBeenCalledTimes(3);
+    expect(notify).toHaveBeenLastCalledWith(expect.objectContaining({ outcome: 'already_exists' }));
+
+    const throwingScheduler = new FixtureScheduler({ enabled: true, run: async () => { throw new Error('boom'); }, log: () => undefined, notify });
+    await throwingScheduler.evaluate(weekdayAfternoon);
+    expect(notify).toHaveBeenCalledTimes(4);
+    expect(notify).toHaveBeenLastCalledWith(expect.objectContaining({ outcome: 'failed' }));
+  });
+
   it('can be disabled and stops timer lifecycle cleanly', () => {
     const scheduler = new FixtureScheduler({ enabled: false, run: async () => ({ outcome: 'created', runKey: 'fixture-key' }), log: () => undefined });
     scheduler.start();

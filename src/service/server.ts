@@ -8,7 +8,8 @@ import { runSyntheticFixtureAnalysis } from './fixtureRun';
 import { LiveH4Stream } from './liveH4Stream';
 import { executeManualOandaAnalysis, runManualOandaAnalysis } from './oandaRun';
 import { executeScheduledOandaAnalysis } from './scheduledOandaRun';
-import { FixtureScheduler, type SchedulerStatus } from './scheduler/fixtureScheduler';
+import { FixtureScheduler, type SchedulerRunResult, type SchedulerStatus } from './scheduler/fixtureScheduler';
+import { notifySchedulerOutcome } from './schedulerNotifications';
 import { parseSchedulerEnabled, parseSchedulerProvider } from './scheduler/torontoSchedule';
 
 export const LOCAL_SERVICE_HOST = '127.0.0.1';
@@ -36,6 +37,9 @@ type LocalServiceOptions = {
   oandaFetch?: typeof fetch;
   liveReconnectDelaysMs?: number[];
   scheduledOandaRetryDelaysMs?: number[];
+  /** Test-only override for the scheduler's outcome notification, so tests never trigger a
+   * real OS notification. Defaults to the real node-notifier-backed notifySchedulerOutcome. */
+  notifySchedulerOutcome?: (result: SchedulerRunResult) => void;
 };
 
 type ServiceHealth = {
@@ -128,6 +132,7 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
     enabled: schedulerEnabled,
     intervalMs: options.schedulerIntervalMs,
     now: options.schedulerNow,
+    notify: options.notifySchedulerOutcome ?? notifySchedulerOutcome,
     provider: schedulerProvider,
     run: async () => {
       if (!repository) throw new Error('Local persistence is unavailable.');

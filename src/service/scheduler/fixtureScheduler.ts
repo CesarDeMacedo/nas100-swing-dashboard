@@ -29,6 +29,10 @@ type FixtureSchedulerOptions = {
   intervalMs?: number;
   log?: (message: string) => void;
   provider?: SchedulerProvider;
+  /** Informational only, fired after each evaluated slot for 'created'/'blocked'/'failed'
+   * outcomes (never for 'already_exists', since nothing changed). No default — callers opt in
+   * explicitly so tests never trigger a real OS notification. */
+  notify?: (result: SchedulerRunResult) => void;
 };
 
 export class FixtureScheduler {
@@ -88,6 +92,7 @@ export class FixtureScheduler {
       this.lastRunProvider = this.options.provider ?? 'fixture';
       this.consecutiveFailures = result.outcome === 'failed' ? this.consecutiveFailures + 1 : 0;
       this.log(`NAS100 scheduler ${slot.key}: ${result.outcome}`);
+      this.options.notify?.(result);
       return result;
     } catch (cause) {
       const result: SchedulerRunResult = {
@@ -99,6 +104,7 @@ export class FixtureScheduler {
       this.lastRunProvider = this.options.provider ?? 'fixture';
       this.consecutiveFailures += 1;
       this.log(`NAS100 scheduler ${slot.key}: failed`);
+      this.options.notify?.(result);
       return result;
     }
   }
