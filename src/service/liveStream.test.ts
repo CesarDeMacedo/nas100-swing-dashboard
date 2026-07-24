@@ -17,7 +17,7 @@ type RunningService = {
 const services: RunningService[] = [];
 const openReaders: ReadableStreamDefaultReader[] = [];
 
-const startService = async (oandaFetch: typeof fetch): Promise<RunningService> => {
+const startService = async (oandaFetch: typeof fetch, liveReconnectDelaysMs?: number[]): Promise<RunningService> => {
   const directory = mkdtempSync(join(tmpdir(), 'nas100-live-'));
   const service = createLocalService({
     databasePath: join(directory, 'history.sqlite'),
@@ -25,6 +25,7 @@ const startService = async (oandaFetch: typeof fetch): Promise<RunningService> =
     schedulerEnabled: false,
     oandaEnvironment: { OANDA_ACCOUNT_ID: 'account-never-returned', OANDA_API_TOKEN: 'token-never-returned', OANDA_NAS100_INSTRUMENT: 'NAS100_USD' },
     oandaFetch,
+    liveReconnectDelaysMs,
   });
   const health = await service.start();
   const running = { stop: service.stop, baseUrl: `http://${LOCAL_SERVICE_HOST}:${health.port}`, directory };
@@ -180,6 +181,30 @@ describe('OANDA live H4 observation lifecycle', () => {
       () => client.events.filter((event) => event.event === 'connection' && (event.data as { state: string }).state === 'live').length === 2,
       4000,
     );
+  }, 10000);
+
+  it('does not let a subscriber joining mid-backoff bypass the scheduled reconnect delay', async () => {
+    // A large, test-only backoff delay so the "still only 1 request" assertion below has a
+    // comfortable margin over real HTTP round-trip overhead — the eventual-reconnect path
+    // itself is already covered by the "reconnects with backoff" test above, so this test
+    // never needs to wait for the timer to actually fire.
+    const { fetcher, streamRequests } = buildFetcher();
+    const service = await startService(fetcher, [60_000]);
+
+    const firstResponse = await fetch(`${service.baseUrl}/providers/oanda/live-h4`);
+    const first = readSse(firstResponse);
+    await waitFor(() => first.events.some((event) => event.event === 'connection' && (event.data as { state: string }).state === 'live'));
+    expect(streamRequests).toHaveLength(1);
+
+    streamRequests[0].close();
+    await waitFor(() => first.events.some((event) => event.event === 'error' && (event.data as { state: string }).state === 'reconnecting'));
+
+    // A second subscriber joins while the backoff timer is pending. The connect must not open
+    // a second upstream pricing-stream request of its own — the scheduled timer is the only
+    // thing allowed to reconnect.
+    const secondResponse = await fetch(`${service.baseUrl}/providers/oanda/live-h4`);
+    readSse(secondResponse);
+    expect(streamRequests).toHaveLength(1);
   }, 10000);
 
   it('refreshes the H4 snapshot exactly once when a price tick rolls into the next H4 window', async () => {

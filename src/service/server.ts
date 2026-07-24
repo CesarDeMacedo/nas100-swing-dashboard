@@ -30,6 +30,7 @@ type LocalServiceOptions = {
   schedulerProvider?: 'fixture' | 'oanda';
   oandaEnvironment?: NodeJS.ProcessEnv;
   oandaFetch?: typeof fetch;
+  liveReconnectDelaysMs?: number[];
 };
 
 type ServiceHealth = {
@@ -117,7 +118,7 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
   let liveReconnectAttempt = 0;
   let liveRolloverRefresh: Promise<void> | null = null;
   let liveIsConnected = false;
-  const reconnectDelays = [1000, 2000, 5000, 10000];
+  const reconnectDelays = options.liveReconnectDelaysMs ?? [1000, 2000, 5000, 10000];
   const h4Window = (time: string) => Math.floor(Date.parse(time) / (4 * 60 * 60 * 1000));
   const liveBroadcast = (event: string, payload: unknown) => liveSubscribers.forEach((subscriber) => sse(subscriber, event, payload));
   const liveSnapshot = async () => {
@@ -128,11 +129,21 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
     return { provider: 'oanda-v20', environment: oandaConfiguration.environment, instrument: source.instrument, receivedAt: new Date().toISOString(), currentPrice: liveOpenCandle?.close ?? null, openCandle: liveOpenCandle, lastCompletedH4SourceTime: liveLastCompletedTime, streamState: 'live' as const };
   };
   const startLiveStream = async () => {
-    if (liveAbort || !oandaProvider || !oandaConfiguration.nas100Instrument) return;
+    // liveReconnectTimer is cleared (set to null) right before the scheduled callback invokes this
+    // function, so this guard only blocks *other* callers (e.g. a subscriber joining mid-backoff)
+    // from short-circuiting the scheduled delay — it never blocks the reconnect itself.
+    if (liveAbort || liveReconnectTimer || !oandaProvider || !oandaConfiguration.nas100Instrument) return;
     const controller = new AbortController();
     liveAbort = controller;
     try {
       const snapshot = await liveSnapshot();
+      // TODO(live-stream lifecycle gap): a subscriber that joins between this broadcast and the
+      // 'live' broadcast below (i.e. while openPricingStream is still in flight) never receives
+      // 'connecting' or 'snapshot' — those already fired to whoever was subscribed at the time.
+      // It just sits with no event until 'live' (or 'error') arrives. The late-join replay below
+      // only covers the already-connected case (liveIsConnected === true); it does not track or
+      // replay an in-progress 'connecting' state. Not fixed yet — needs a tri-state
+      // ('idle' | 'connecting' | 'live') instead of the current boolean if closed.
       liveBroadcast('connection', { state: 'connecting', receivedAt: snapshot.receivedAt });
       liveBroadcast('snapshot', snapshot);
       const response = await oandaProvider.openPricingStream(oandaConfiguration.nas100Instrument, controller.signal);
@@ -242,6 +253,12 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
           return;
         }
         response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
+        // writeHead() alone buffers the status line/headers in Node — they only reach the
+        // socket with the next write(). Without an immediate flush, a subscriber joining while
+        // the stream is disconnected (backoff, no broadcast imminent) never sees the response
+        // resolve until some future broadcast happens to write something, which can be seconds
+        // away or, in the worst case (last attempt exhausted, no further reconnect), never.
+        response.flushHeaders();
         if (liveStopTimer) { clearTimeout(liveStopTimer); liveStopTimer = null; }
         liveSubscribers.add(response);
         if (liveIsConnected) {
