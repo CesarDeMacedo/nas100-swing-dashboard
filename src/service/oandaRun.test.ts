@@ -12,6 +12,7 @@ import { buildOandaMultiTimeframeInputs, buildOandaReportInputs, fetchCrossMarke
 import type { EventRisk } from '../schemas';
 import { OandaProvider } from '../providers/oanda/oandaProvider';
 import { parseOandaConfiguration } from '../providers/oanda/config';
+import { buildDashboardState } from '../application/buildDashboardState';
 
 const directories: string[] = [];
 
@@ -67,6 +68,55 @@ const trendSource = (instrument: string, direction: 'up' | 'down'): OandaH4Candl
     })),
   };
 };
+
+// A long bullish trend (200+ bars, so the H4-side EMA200 computation that gates
+// technicalContext.status has enough data to reach 'ready') followed by a shallow pullback
+// toward the EMA zone, ending in one real-bodied bullish confirmation candle (unlike
+// trendSource's flat-bodied candles, which can never satisfy calculateTradePlan's
+// confirmation-candle body-shape check). Wide 10-point high/low range gives a large-enough
+// ATR for the 0.35-ATR location/EMA tolerance to be reachable by a hand-placed pullback low.
+// The steep, long uptrend also pushes the confirmed swing high well above the pullback-based
+// entry, so reward-to-risk clears the 2.0 minimum with room to spare.
+const bullishPullbackConfirmedSource = (instrument: string): OandaH4CandleResult => {
+  const trendPattern = [0, 4, 1, -3, 0, 3];
+  const trendCloses = Array.from({ length: 210 }, (_, index) => 100 + index * 3 + trendPattern[index % trendPattern.length]!);
+  const peak = trendCloses.at(-1)!;
+  // The pullback low needs 2 confirmed higher-low candles after it (H4_SWING_WINDOW) before
+  // the final confirmation candle, or findConfirmedSwingPoints can never confirm it as a swing
+  // low — leaving longPlan.invalidationPrice/stopPrice null and its status stuck at 'invalid'.
+  // Depth is tuned (via the reward/risk algebra in the helper's own history) so the confirmed
+  // low sits close enough to entry to keep risk small, while the original peak (far above)
+  // keeps reward large — clearing the 2.0 minimum reward-to-risk with margin.
+  const pullbackCloses = [peak - 15, peak - 22, peak - 30, peak - 25, peak - 20];
+  const closes = [...trendCloses, ...pullbackCloses];
+  const flatCandles = closes.map((close, index) => ({
+    time: new Date(Date.UTC(2026, 0, 1, index * 4)).toISOString(),
+    open: close, high: close + 5, low: close - 5, close, isClosed: true, volume: 10,
+    instrument, timeframe: 'H4' as const, source: 'oanda-v20' as const,
+  }));
+  const confirmationIndex = closes.length;
+  const confirmationCandle = {
+    time: new Date(Date.UTC(2026, 0, 1, confirmationIndex * 4)).toISOString(),
+    open: peak - 31, high: peak - 26, low: peak - 32, close: peak - 27, isClosed: true, volume: 10,
+    instrument, timeframe: 'H4' as const, source: 'oanda-v20' as const,
+  };
+  return { provider: 'oanda-v20', environment: 'practice', instrument, timeframe: 'H4', candles: [...flatCandles, confirmationCandle] };
+};
+
+// 220 daily candles (enough for EMA200) in a steady uptrend, so dailyRegime classifies as
+// 'available' instead of 'unavailable' — required for technicalContext.status to reach
+// 'ready', which the Patience Filter needs to ever report 'allowed'.
+const richDailySource = (instrument: string): OandaDailyCandleResult => ({
+  provider: 'oanda-v20', environment: 'practice', instrument, timeframe: 'D',
+  candles: Array.from({ length: 220 }, (_, index) => {
+    const close = 100 + index * 1.5;
+    return {
+      time: new Date(Date.UTC(2025, 0, 1 + index)).toISOString(),
+      open: close, high: close + 3, low: close - 3, close, isClosed: true, volume: 10,
+      instrument, timeframe: 'D' as const, source: 'oanda-v20' as const,
+    };
+  }),
+});
 
 const repository = () => {
   const directory = mkdtempSync(join(tmpdir(), 'nas100-oanda-run-'));
@@ -263,5 +313,41 @@ describe('manual OANDA analysis run', () => {
 
     expect(analysis.eventRisk).toMatchObject([{ status: 'UNAVAILABLE', freshness: 'MISSING' }]);
     expect(analysis.whyNoEntry).toEqual(['Event-risk data is unavailable.']);
+  });
+
+  it('proves the safety clamp actually holds something back: the same realistic inputs that make the underlying pipeline compute a real BUY still come out as WAIT once runManualOandaAnalysis applies safetyConstrainedState', () => {
+    // A fully "good" scenario by construction: confirmed bullish H4 structure with a real
+    // pullback-then-confirmation candle (entry location acceptable, confirmation candle
+    // confirmed, R:R >= 2.0 — see bullishPullbackConfirmedSource's derivation comment), a
+    // 'ready' daily regime, cross-market CONFIRMING on all three instruments, and clean
+    // (non-blocking) event-risk. If the clamp were ever accidentally loosened or removed,
+    // this exact input would start returning BUY from runManualOandaAnalysis.
+    const nas100 = bullishPullbackConfirmedSource('NAS100_USD');
+    const crossMarketH4: CrossMarketH4Results = { us500: trendSource('SPX500_USD', 'up'), us30: trendSource('US30_USD', 'up'), russell2000: trendSource('US2000_USD', 'up') };
+    const cleanEventRisk: EventRisk[] = [];
+
+    const { analysis, candles, technicalContext } = buildOandaMultiTimeframeInputs(nas100, richDailySource('NAS100_USD'), '2026-05-01T00:00:00.000Z', crossMarketH4, cleanEventRisk);
+    const { preferredEntryZone: _p, invalidation: _i, ...analysisWithoutMarketLevels } = analysis;
+    // Mirrors exactly what runManualOandaAnalysis does internally before the clamp, so this
+    // pre-clamp state is provably the same one the real pipeline would have produced.
+    const preClampState = buildDashboardState({ ...analysisWithoutMarketLevels, supportZones: [], resistanceZones: [] }, candles, technicalContext);
+
+    // Proof #1: without the clamp, this input really does produce a live BUY.
+    expect(preClampState.action).toBe('BUY');
+    expect(preClampState.isActionable).toBe(true);
+    expect(preClampState.entryPrice).not.toBeNull();
+    expect(preClampState.estimatedRewardRisk).not.toBeNull();
+    expect(preClampState.estimatedRewardRisk!).toBeGreaterThanOrEqual(2);
+
+    // Proof #2: the real, unmodified pipeline on the exact same input still returns WAIT.
+    const store = repository();
+    const result = runManualOandaAnalysis(store, nas100, richDailySource('NAS100_USD'), 'user', crossMarketH4, cleanEventRisk);
+
+    expect(['BUY', 'SELL']).not.toContain(result.report?.action);
+    expect(result.report?.isActionable).toBe(false);
+    expect(result.report?.entryPrice).toBeNull();
+    expect(result.report?.targets).toEqual([]);
+    expect(result.report?.primaryReason).toContain('Entry authorization is disabled');
+    store.close();
   });
 });
