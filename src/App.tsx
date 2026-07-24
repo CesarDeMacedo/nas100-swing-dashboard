@@ -9,7 +9,26 @@ import { parseCandleDataset } from './domain/candles';
 import { buildDashboardState } from './application/buildDashboardState';
 import { currentCandleDatasetSource } from './domain/fixtures';
 import { useDashboardStore } from './store/dashboardStore';
-import { localAnalysisService, type HistoryResult, type LocalAnalysisServiceClient, type ManualRunResult, type OandaPreviewData, type OandaPreviewResult, type OandaProviderStatus, type RunDetailResult, type SavedOandaDisplaySnapshot, type ServiceAvailability } from './serviceClient/localAnalysisService';
+import { localAnalysisService, type HistoryResult, type LocalAnalysisServiceClient, type ManualRunResult, type OandaPreviewCandle, type OandaPreviewData, type OandaPreviewResult, type OandaProviderStatus, type RunDetailResult, type SavedOandaDisplaySnapshot, type ServiceAvailability } from './serviceClient/localAnalysisService';
+
+const candleTime = (candle: unknown): string | null => {
+  if (!candle || typeof candle !== 'object') return null;
+  const time = (candle as { time?: unknown }).time;
+  return typeof time === 'string' ? time : null;
+};
+
+/** Merges saved snapshot candles with any completed candles fetched to fill the gap
+ * since the snapshot was taken, then appends the current live open candle. Dedupes
+ * and sorts by time so out-of-order arrival (gap-fetch vs. live rollover) is safe. */
+const mergeCandleSeries = (saved: unknown[], gap: unknown[], open: unknown | null) => {
+  const byTime = new Map<string, unknown>();
+  for (const candle of [...saved, ...gap]) {
+    const time = candleTime(candle);
+    if (time) byTime.set(time, candle);
+  }
+  const merged = [...byTime.values()].sort((a, b) => Date.parse(candleTime(a) ?? '') - Date.parse(candleTime(b) ?? ''));
+  return open ? [...merged, open] : merged;
+};
 
 // Lazy-loaded so the ~500kB lightweight-charts dependency is not part of the initial bundle.
 const OandaChartPreview = lazy(() => import('./components/OandaChartPreview').then((module) => ({ default: module.OandaChartPreview })));
@@ -44,6 +63,7 @@ export default function App({
   const [selectedHistoryRunKey, setSelectedHistoryRunKey] = useState<string | null>(null);
   const [savedOandaSnapshot, setSavedOandaSnapshot] = useState<SavedOandaDisplaySnapshot | null>(null);
   const [liveOpenCandle, setLiveOpenCandle] = useState<unknown>(null);
+  const [gapCandles, setGapCandles] = useState<OandaPreviewCandle[]>([]);
   const [livePrice, setLivePrice] = useState<number | null>(null);
   const [liveStatus, setLiveStatus] = useState<'connecting' | 'live' | 'stale' | 'offline' | null>(null);
   const [oandaPreview, setOandaPreview] = useState<OandaPreviewData | null>(null);
@@ -51,7 +71,7 @@ export default function App({
   const [oandaPreviewError, setOandaPreviewError] = useState<string | null>(null);
   const [oandaStatus, setOandaStatus] = useState<'checking' | OandaProviderStatus | null>(null);
   const savedAnalysisResult = useMemo(() => savedOandaSnapshot ? parseAnalysis(savedOandaSnapshot.analysis) : null, [savedOandaSnapshot]);
-  const savedCandleResult = useMemo(() => savedOandaSnapshot ? parseCandleDataset({ schemaVersion: '1.0.0', datasetId: `saved-oanda:${savedOandaSnapshot.instrument}:${savedOandaSnapshot.h4SourceCandleTime ?? 'unavailable'}`, description: 'Saved immutable OANDA H4 analysis snapshot.', isSynthetic: false, timezone: 'America/Toronto', instrument: savedOandaSnapshot.instrument, timeframe: 'H4', candles: [...(savedOandaSnapshot.candles as unknown[]), ...(liveOpenCandle ? [liveOpenCandle] : [])] }) : null, [savedOandaSnapshot, liveOpenCandle]);
+  const savedCandleResult = useMemo(() => savedOandaSnapshot ? parseCandleDataset({ schemaVersion: '1.0.0', datasetId: `saved-oanda:${savedOandaSnapshot.instrument}:${savedOandaSnapshot.h4SourceCandleTime ?? 'unavailable'}`, description: 'Saved immutable OANDA H4 analysis snapshot.', isSynthetic: false, timezone: 'America/Toronto', instrument: savedOandaSnapshot.instrument, timeframe: 'H4', candles: mergeCandleSeries(savedOandaSnapshot.candles as unknown[], gapCandles, liveOpenCandle) }) : null, [savedOandaSnapshot, gapCandles, liveOpenCandle]);
   const activeAnalysis = savedOandaSnapshot ? (savedAnalysisResult?.success ? savedAnalysisResult.analysis : null) : dashboardAnalysis;
   const activeCandleResult = savedOandaSnapshot ? savedCandleResult! : candleResult;
 
@@ -86,15 +106,50 @@ export default function App({
   }, [serviceAvailability, serviceClient]);
 
   useEffect(() => {
+    if (!savedOandaSnapshot || !serviceClient.getOandaCandles) { setGapCandles([]); return; }
+    let active = true;
+    setGapCandles([]);
+    const lastSavedTime = savedOandaSnapshot.h4SourceCandleTime;
+    const lastSavedMs = lastSavedTime ? Date.parse(lastSavedTime) : null;
+    serviceClient.getOandaCandles(250).then((result) => {
+      if (!active || result.kind !== 'succeeded') return;
+      // Fills the gap between the saved (immutable) snapshot and now: H4 candles that
+      // completed after the snapshot was taken but before this view was opened. The live
+      // SSE stream only ever carries the currently-open candle, never a backfill, so
+      // without this the chart jumps straight from the snapshot's last candle to
+      // whatever's open now — silently skipping every candle that closed in between.
+      const missing = result.data.candles.filter((candle) => candle.isClosed && (lastSavedMs === null || Date.parse(candle.time) > lastSavedMs));
+      setGapCandles(missing);
+    });
+    return () => {
+      active = false;
+    };
+  }, [savedOandaSnapshot, serviceClient]);
+
+  useEffect(() => {
     if (!savedOandaSnapshot || !serviceClient.subscribeOandaLiveH4) return;
     setLiveStatus('connecting');
+    const applyOpenCandle = (incoming: unknown) => {
+      setLiveOpenCandle((previous: unknown) => {
+        const previousTime = candleTime(previous);
+        const incomingTime = candleTime(incoming);
+        // The open candle's `time` is the start of its H4 bucket and never changes while
+        // it's open — a different value means the H4 window rolled over. The previous
+        // open candle is now closed, so fold it into the gap-fill list instead of losing
+        // it the moment the new open candle replaces it.
+        if (previous && previousTime && incomingTime && previousTime !== incomingTime) {
+          setGapCandles((gap) => [...gap, { ...(previous as object), isClosed: true } as OandaPreviewCandle]);
+        }
+        return incoming ?? null;
+      });
+    };
     const close = serviceClient.subscribeOandaLiveH4((event) => {
       if (event.type === 'snapshot') {
-        setLiveOpenCandle(event.payload.openCandle ?? null);
+        applyOpenCandle(event.payload.openCandle ?? null);
         setLivePrice(typeof event.payload.currentPrice === 'number' ? event.payload.currentPrice : null);
         setLiveStatus('live');
       } else if (event.type === 'candle') {
-        setLiveOpenCandle(event.payload.candle ?? null);
+        applyOpenCandle(event.payload.candle ?? null);
         setLiveStatus('live');
       } else if (event.type === 'price') {
         setLivePrice(typeof event.payload.currentPrice === 'number' ? event.payload.currentPrice : null);

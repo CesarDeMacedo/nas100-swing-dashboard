@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { vi } from 'vitest';
@@ -136,6 +136,48 @@ describe('dashboard rendering', () => {
 
     fireEvent.change(within(historyDialog).getByRole('combobox', { name: 'Number of records to load' }), { target: { value: '50' } });
     expect(listRecentRuns).toHaveBeenLastCalledWith(50);
+  });
+
+  it('fills the gap between a saved snapshot and now with completed candles fetched on open', async () => {
+    const savedAnalysis = structuredClone(actionFixtures.WAIT) as Record<string, unknown>;
+    Object.assign(savedAnalysis, { id: 'saved-oanda-gap', instrument: 'NAS100_USD', displayName: 'NAS100_USD', dataProvider: 'OANDA v20', currentPrice: 30123 });
+    const snapshot = {
+      provider: 'oanda-v20' as const, environment: 'practice' as const, instrument: 'NAS100_USD', timeframe: 'H4' as const,
+      candles: [{ time: '2026-07-22T00:00:00.000Z', open: 30000, high: 30050, low: 29950, close: 30020, isClosed: true, instrument: 'NAS100_USD', timeframe: 'H4', source: 'oanda-v20' }],
+      analysis: savedAnalysis, h4SourceCandleTime: '2026-07-22T00:00:00.000Z', dailySourceCandleTime: null, warnings: [],
+    };
+    const detail: RunDetailResult = { kind: 'succeeded', item: historyItem, report: { ...historyDetail.report, displaySnapshot: snapshot } };
+    const getOandaCandles = vi.fn().mockResolvedValue({
+      kind: 'succeeded',
+      data: {
+        provider: 'oanda-v20', environment: 'practice', instrument: 'NAS100_USD', timeframe: 'H4',
+        candles: [
+          // Same time as the saved snapshot's own candle — must not be double-counted.
+          { time: '2026-07-22T00:00:00.000Z', open: 30000, high: 30050, low: 29950, close: 30020, isClosed: true, instrument: 'NAS100_USD', timeframe: 'H4', source: 'oanda-v20' },
+          // Two candles that closed after the snapshot was taken — these were the ones missing.
+          { time: '2026-07-22T04:00:00.000Z', open: 30020, high: 30080, low: 30000, close: 30060, isClosed: true, instrument: 'NAS100_USD', timeframe: 'H4', source: 'oanda-v20' },
+          { time: '2026-07-22T08:00:00.000Z', open: 30060, high: 30100, low: 30040, close: 30090, isClosed: true, instrument: 'NAS100_USD', timeframe: 'H4', source: 'oanda-v20' },
+          // Currently open — must be excluded from the gap fill.
+          { time: '2026-07-22T12:00:00.000Z', open: 30090, high: 30110, low: 30070, close: 30100, isClosed: false, instrument: 'NAS100_USD', timeframe: 'H4', source: 'oanda-v20' },
+        ],
+      },
+    });
+    const serviceClient: LocalAnalysisServiceClient = {
+      ...client(async () => ({ kind: 'available' }), async () => run, async () => ({ kind: 'succeeded', runs: [historyItem] }), async () => detail),
+      getOandaCandles,
+    };
+    render(<App serviceClient={serviceClient} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Open analysis history' }));
+    const historyDialog = await screen.findByRole('dialog', { name: 'Analysis history' });
+    fireEvent.click(within(historyDialog).getByRole('button', { name: /WAIT FOR PULLBACK/ }));
+    fireEvent.click(await within(historyDialog).findByRole('button', { name: 'View in dashboard' }));
+
+    expect(getOandaCandles).toHaveBeenCalledWith(250);
+    // 1 saved candle + 2 gap candles (the duplicate and the open one excluded) = 3 total.
+    await waitFor(() => {
+      expect(screen.getByTestId('latest-candle-summary')).toHaveTextContent('3 saved OANDA candles');
+    });
   });
 
   it('opens a saved OANDA snapshot in the dashboard and returns to mock data without provider calls', async () => {
