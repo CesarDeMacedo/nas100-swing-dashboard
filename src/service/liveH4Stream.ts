@@ -1,5 +1,6 @@
 import type { ServerResponse } from 'node:http';
 
+import { h4Window } from '../domain/h4Window';
 import type { OandaEnvironment, OandaH4CandleResult } from '../providers/oanda/types';
 
 type LiveH4Candle = OandaH4CandleResult['candles'][number];
@@ -16,8 +17,6 @@ type LiveConnectionState = 'idle' | 'connecting' | 'live';
 
 const sse = (response: ServerResponse, event: string, payload: unknown) =>
   response.write(`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`);
-
-const h4Window = (time: string) => Math.floor(Date.parse(time) / (4 * 60 * 60 * 1000));
 
 /**
  * Owns the server-side OANDA pricing-stream state machine relayed to the browser over

@@ -7,6 +7,7 @@ import { OandaProvider, findNas100CandidatesFromInstruments } from '../providers
 import { runSyntheticFixtureAnalysis } from './fixtureRun';
 import { LiveH4Stream } from './liveH4Stream';
 import { executeManualOandaAnalysis, runManualOandaAnalysis } from './oandaRun';
+import { executeScheduledOandaAnalysis } from './scheduledOandaRun';
 import { FixtureScheduler, type SchedulerStatus } from './scheduler/fixtureScheduler';
 import { parseSchedulerEnabled, parseSchedulerProvider } from './scheduler/torontoSchedule';
 
@@ -29,9 +30,12 @@ type LocalServiceOptions = {
   schedulerEnabled?: boolean;
   schedulerIntervalMs?: number;
   schedulerProvider?: 'fixture' | 'oanda';
+  /** Test-only override for the scheduler's clock, so a specific Toronto slot can be evaluated deterministically instead of waiting for the real one. */
+  schedulerNow?: () => Date;
   oandaEnvironment?: NodeJS.ProcessEnv;
   oandaFetch?: typeof fetch;
   liveReconnectDelaysMs?: number[];
+  scheduledOandaRetryDelaysMs?: number[];
 };
 
 type ServiceHealth = {
@@ -123,17 +127,14 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
   const scheduler = new FixtureScheduler({
     enabled: schedulerEnabled,
     intervalMs: options.schedulerIntervalMs,
+    now: options.schedulerNow,
     provider: schedulerProvider,
     run: async () => {
       if (!repository) throw new Error('Local persistence is unavailable.');
       if (schedulerProvider === 'oanda') {
         if (!oandaProvider || !oandaConfiguration.nas100Instrument) return { outcome: 'failed', runKey: 'oanda:unconfigured', message: 'OANDA scheduler requires configured credentials and an explicit instrument.' };
-        try {
-          const result = await executeManualOandaAnalysis(repository, oandaProvider, oandaConfiguration.nas100Instrument, 'scheduler');
-          return { outcome: result.outcome, runKey: result.run.runKey, message: result.message };
-        } catch (cause) {
-          return { outcome: 'failed', runKey: 'oanda:request-failed', message: cause instanceof Error ? cause.message : 'Scheduled OANDA analysis could not be completed.' };
-        }
+        const result = await executeScheduledOandaAnalysis(repository, oandaProvider, oandaConfiguration.nas100Instrument, { retryDelaysMs: options.scheduledOandaRetryDelaysMs, now: options.schedulerNow });
+        return { outcome: result.outcome, runKey: result.run.runKey, message: result.message };
       }
       const result = runSyntheticFixtureAnalysis(repository, undefined, 'scheduler');
       return { outcome: result.outcome, runKey: result.run.runKey, message: result.message };

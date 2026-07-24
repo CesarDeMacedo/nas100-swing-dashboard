@@ -25,9 +25,9 @@ const clearOandaEnvironment = () => {
   for (const key of oandaEnvironmentKeys) delete process.env[key];
 };
 
-const startService = async (options: { schedulerEnabled?: boolean; schedulerProvider?: 'fixture' | 'oanda'; oandaEnvironment?: NodeJS.ProcessEnv; oandaFetch?: typeof fetch } = {}): Promise<RunningService> => {
+const startService = async (options: { schedulerEnabled?: boolean; schedulerProvider?: 'fixture' | 'oanda'; schedulerIntervalMs?: number; schedulerNow?: () => Date; oandaEnvironment?: NodeJS.ProcessEnv; oandaFetch?: typeof fetch; scheduledOandaRetryDelaysMs?: number[] } = {}): Promise<RunningService> => {
   const directory = mkdtempSync(join(tmpdir(), 'nas100-service-'));
-  const service = createLocalService({ databasePath: join(directory, 'history.sqlite'), port: 0, schedulerEnabled: options.schedulerEnabled ?? false, schedulerProvider: options.schedulerProvider, oandaEnvironment: options.oandaEnvironment, oandaFetch: options.oandaFetch });
+  const service = createLocalService({ databasePath: join(directory, 'history.sqlite'), port: 0, schedulerEnabled: options.schedulerEnabled ?? false, schedulerProvider: options.schedulerProvider, schedulerIntervalMs: options.schedulerIntervalMs, schedulerNow: options.schedulerNow, oandaEnvironment: options.oandaEnvironment, oandaFetch: options.oandaFetch, scheduledOandaRetryDelaysMs: options.scheduledOandaRetryDelaysMs });
   const health = await service.start();
   const running = { stop: service.stop, schedulerStatus: service.schedulerStatus, baseUrl: `http://${LOCAL_SERVICE_HOST}:${health.port}`, directory };
   services.push(running);
@@ -148,6 +148,53 @@ describe('local manual-run service', () => {
     expect(health.scheduler).toMatchObject({ configuredProvider: 'oanda', activeProvider: 'oanda', lastRunResult: null, lastFailureSummary: null });
     expect(fetcher).not.toHaveBeenCalled();
     expect(JSON.stringify(health)).not.toContain('token-never-returned');
+  });
+
+  it('retries the scheduled OANDA run through the real server wiring instead of failing the slot on one transient error', async () => {
+    // Toronto 13:01 EDT = 17:01 UTC; the H4 candle expected to have just closed covers
+    // [13:00, 17:00) UTC, so its time is 13:00Z (verified against scheduledOandaRun.test.ts).
+    const fixedNow = new Date('2026-07-24T17:01:00.000Z');
+    const expectedH4CandleTime = '2026-07-24T13:00:00.000Z';
+    const h4CandlesPayload = {
+      candles: [
+        { time: '2026-07-24T09:00:00.000Z', complete: true, volume: 10, mid: { o: '29000', h: '29020', l: '28990', c: '29010' } },
+        { time: expectedH4CandleTime, complete: true, volume: 11, mid: { o: '29010', h: '29040', l: '29000', c: '29030' } },
+        { time: '2026-07-24T17:00:00.000Z', complete: false, volume: 12, mid: { o: '29030', h: '99999', l: '1', c: '99998' } },
+      ],
+    };
+    const dailyCandlesPayload = {
+      candles: [
+        { time: '2026-07-22T00:00:00.000Z', complete: true, volume: 20, mid: { o: '29000', h: '29050', l: '28950', c: '29020' } },
+        { time: '2026-07-23T00:00:00.000Z', complete: true, volume: 21, mid: { o: '29020', h: '29060', l: '28980', c: '29040' } },
+        { time: '2026-07-24T00:00:00.000Z', complete: false, volume: 22, mid: { o: '29040', h: '99999', l: '1', c: '99998' } },
+      ],
+    };
+    let h4Calls = 0;
+    const fetcher: typeof fetch = async (input) => {
+      const requestUrl = input instanceof URL ? input.toString() : typeof input === 'string' ? input : input.url;
+      const granularity = new URL(requestUrl).searchParams.get('granularity');
+      if (granularity === 'D') return new Response(JSON.stringify(dailyCandlesPayload), { status: 200 });
+      h4Calls += 1;
+      if (h4Calls === 1) return new Response('', { status: 503 });
+      return new Response(JSON.stringify(h4CandlesPayload), { status: 200 });
+    };
+    const service = await startService({
+      schedulerEnabled: true,
+      schedulerProvider: 'oanda',
+      schedulerIntervalMs: 60_000,
+      schedulerNow: () => fixedNow,
+      scheduledOandaRetryDelaysMs: [20],
+      oandaEnvironment: { OANDA_ACCOUNT_ID: 'account-never-returned', OANDA_API_TOKEN: 'token-never-returned', OANDA_NAS100_INSTRUMENT: 'NAS100_USD' },
+      oandaFetch: fetcher,
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const health = await fetch(`${service.baseUrl}/health`).then((response) => response.json());
+
+    expect(health.scheduler.lastRunResult).toMatchObject({ outcome: 'created' });
+    expect(h4Calls).toBeGreaterThanOrEqual(2);
+    const history = await fetch(`${service.baseUrl}/runs`).then((response) => response.json());
+    expect(history.runs[0].run).toMatchObject({ triggeredBy: 'scheduler', status: 'COMPLETED' });
   });
 
   it('allows only local Vite preflight requests without changing its localhost bind', async () => {
