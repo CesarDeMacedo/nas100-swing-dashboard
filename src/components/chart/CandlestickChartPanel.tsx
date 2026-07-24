@@ -4,7 +4,6 @@ import type { SafeAnalysis } from '../../domain/analysis';
 import type { DashboardState } from '../../application/buildDashboardState';
 import type { CandleDataset, CandleDatasetParseResult } from '../../domain/candles';
 import { formatPrice } from '../../lib/format';
-import { ChartDecisionOverlay } from './ChartDecisionOverlay';
 import { ChartHeader } from './ChartHeader';
 import { ChartLegend } from './ChartLegend';
 import { ChartStatusOverlay } from './ChartStatusOverlay';
@@ -101,11 +100,6 @@ function ValidCandlestickChart({
           accessibleLabel={accessibleLabel}
           resetKey={resetKey}
           chartIdentity={dataset.datasetId}
-        />
-        <ChartDecisionOverlay
-          action={chartAnalysis.action}
-          label={dashboardState?.actionLabel}
-          reason={chartAnalysis.reason}
         />
         <ChartStatusOverlay isClosed={latestCandle.isClosed} />
       </div>

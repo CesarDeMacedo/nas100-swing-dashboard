@@ -104,7 +104,7 @@ export const FinancialChart = forwardRef<FinancialChartHandle, FinancialChartPro
         secondsVisible: false,
         borderVisible: true,
         borderColor: '#2a3a46',
-        rightOffset: 12,
+        rightOffset: 22,
         barSpacing: 9,
         minBarSpacing: 3,
         tickMarkFormatter: formatAxisTime,
@@ -151,9 +151,9 @@ export const FinancialChart = forwardRef<FinancialChartHandle, FinancialChartPro
     applyOverlays();
 
     const visibleBars = Math.min(58, candles.length);
-    // +12 (not +3) leaves genuine empty space for the price-zone labels drawn just right
+    // +22 (not +3) leaves genuine empty space for the price-zone labels drawn just right
     // of the last candle (see PriceZoneLayer) instead of relying on the pane-edge clamp.
-    chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, candles.length - visibleBars), to: candles.length + 12 });
+    chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, candles.length - visibleBars), to: candles.length + 22 });
 
     const resizeObserver = new ResizeObserver((entries) => {
       const entry = entries[0];

@@ -26,7 +26,7 @@ export function PrimaryActionBanner({ action, reason, label }: PrimaryActionBann
       aria-label={`Current action: ${visibleLabel}`}
       data-testid="primary-action-banner"
     >
-      <Icon className="action-banner__icon" aria-hidden="true" size={38} strokeWidth={2.1} />
+      <Icon className="action-banner__icon" aria-hidden="true" size={26} strokeWidth={2.1} />
       <div>
         <span className="action-banner__label">{visibleLabel}</span>
         {reason ? <span className="action-banner__reason">{reason}</span> : null}
