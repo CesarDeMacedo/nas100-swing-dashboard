@@ -258,6 +258,7 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
           json(response, result.outcome === 'created' ? 201 : 200, {
             id: result.run.id,
             runKey: result.run.runKey,
+            persistedAt: result.run.persistedAt,
             provider: result.provider,
             instrument: result.instrument,
             sourceCandleTime: result.report.sourceCandleTime,

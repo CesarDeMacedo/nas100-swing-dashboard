@@ -3,6 +3,7 @@ import { formatTimeframeLabel } from '../lib/format';
 import { formatPrice } from '../lib/format';
 import type { ManualRunResult, OandaProviderStatus, ServiceAvailability } from '../serviceClient/localAnalysisService';
 import { LocalServiceControl } from './LocalServiceControl';
+import { OandaManualRunControl } from './OandaManualRunControl';
 import { OandaStatusBadge } from './OandaStatusBadge';
 
 type DashboardHeaderProps = Pick<Analysis, 'displayName' | 'instrument' | 'timeframe'> & {
@@ -18,9 +19,13 @@ type DashboardHeaderProps = Pick<Analysis, 'displayName' | 'instrument' | 'timef
   liveObservationStatus?: string | null;
   liveObservationPrice?: number | null;
   oandaStatus?: 'checking' | OandaProviderStatus;
+  oandaManualRunState?: 'idle' | 'running' | ManualRunResult['kind'];
+  oandaManualRunResult?: ManualRunResult | null;
+  onRunOandaNow?: () => void;
 };
 
-export function DashboardHeader({ displayName, instrument, timeframe, serviceAvailability, manualRunState, manualRunResult, onManualRun, onOpenHistory, savedOandaProvenance, savedSourceCandleTime, onReturnToMock, onOpenOandaPreview, liveObservationStatus, liveObservationPrice, oandaStatus }: DashboardHeaderProps) {
+export function DashboardHeader({ displayName, instrument, timeframe, serviceAvailability, manualRunState, manualRunResult, onManualRun, onOpenHistory, savedOandaProvenance, savedSourceCandleTime, onReturnToMock, onOpenOandaPreview, liveObservationStatus, liveObservationPrice, oandaStatus, oandaManualRunState, oandaManualRunResult, onRunOandaNow }: DashboardHeaderProps) {
+  const oandaConfigured = typeof oandaStatus === 'object' && oandaStatus.kind === 'configured';
   const titleTimeframe = formatTimeframeLabel(timeframe);
 
   return (
@@ -40,6 +45,9 @@ export function DashboardHeader({ displayName, instrument, timeframe, serviceAva
         <LocalServiceControl availability={serviceAvailability} runState={manualRunState} result={manualRunResult ?? null} onRun={onManualRun} onOpenHistory={onOpenHistory} />
       ) : null}
       {!savedOandaProvenance && serviceAvailability === 'available' && onOpenOandaPreview ? <button type="button" onClick={onOpenOandaPreview}>OANDA chart preview</button> : null}
+      {!savedOandaProvenance && serviceAvailability === 'available' && oandaConfigured && oandaManualRunState && onRunOandaNow ? (
+        <OandaManualRunControl runState={oandaManualRunState} result={oandaManualRunResult ?? null} onRun={onRunOandaNow} />
+      ) : null}
       {!savedOandaProvenance && serviceAvailability === 'available' && oandaStatus ? <OandaStatusBadge status={oandaStatus} /> : null}
     </div>
   );

@@ -56,6 +56,8 @@ export default function App({
   const [serviceAvailability, setServiceAvailability] = useState<'checking' | ServiceAvailability['kind']>('checking');
   const [manualRunState, setManualRunState] = useState<'idle' | 'running' | ManualRunResult['kind']>('idle');
   const [manualRunResult, setManualRunResult] = useState<ManualRunResult | null>(null);
+  const [oandaManualRunState, setOandaManualRunState] = useState<'idle' | 'running' | ManualRunResult['kind']>('idle');
+  const [oandaManualRunResult, setOandaManualRunResult] = useState<ManualRunResult | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [history, setHistory] = useState<HistoryResult | { kind: 'loading' } | null>(null);
   const [historyLimit, setHistoryLimit] = useState(10);
@@ -166,6 +168,15 @@ export default function App({
     setManualRunState(manualRun.kind);
   };
 
+  const runManualOandaNow = async () => {
+    if (!serviceClient.runManualOanda || oandaManualRunState === 'running') return;
+    setOandaManualRunState('running');
+    const manualRun = await serviceClient.runManualOanda();
+    setOandaManualRunResult(manualRun);
+    setOandaManualRunState(manualRun.kind);
+    if (historyOpen) void loadHistory();
+  };
+
   const loadHistory = async (limit = historyLimit) => {
     setHistoryLimit(limit);
     setHistory({ kind: 'loading' });
@@ -241,6 +252,9 @@ export default function App({
           onOpenOandaPreview={() => void loadOandaPreview()}
           savedMetadata={savedOandaSnapshot ? { provenance: `OANDA ${savedOandaSnapshot.environment.toUpperCase()}`, sourceTime: savedOandaSnapshot.h4SourceCandleTime, latestPrice: livePrice, liveStatus } : undefined}
           oandaStatus={oandaStatus ?? undefined}
+          oandaManualRunState={oandaManualRunState}
+          oandaManualRunResult={oandaManualRunResult}
+          onRunOandaNow={() => void runManualOandaNow()}
         />
       ) : null}
     </AppShell>

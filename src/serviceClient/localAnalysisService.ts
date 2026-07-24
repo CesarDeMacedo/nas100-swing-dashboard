@@ -93,6 +93,7 @@ export type LocalAnalysisServiceClient = {
   checkHealth: () => Promise<ServiceAvailability>;
   checkOandaStatus?: () => Promise<OandaProviderStatus>;
   runManualFixture: () => Promise<ManualRunResult>;
+  runManualOanda?: () => Promise<ManualRunResult>;
   listRecentRuns: (limit: number) => Promise<HistoryResult>;
   getRunByKey: (runKey: string) => Promise<RunDetailResult>;
   getOandaCandles?: (count?: number) => Promise<OandaPreviewResult>;
@@ -224,6 +225,17 @@ export function createLocalAnalysisServiceClient(baseUrl = serviceUrl()): LocalA
         return payload.alreadyExists ? { kind: 'already_exists', run: payload } : { kind: 'succeeded', run: payload };
       } catch {
         return { kind: 'failed', message: 'Start the local analysis service to enable manual persistence.' };
+      }
+    },
+    async runManualOanda() {
+      try {
+        const response = await request('/runs/manual-oanda', { method: 'POST' });
+        const payload = await responseJson(response);
+        if (!response.ok) return { kind: 'failed', message: serviceErrorMessage(payload, 'Manual OANDA analysis could not be saved.') };
+        if (!isManualRunSummary(payload)) return invalidResponse('Local service returned an invalid manual-run response.');
+        return payload.alreadyExists ? { kind: 'already_exists', run: payload } : { kind: 'succeeded', run: payload };
+      } catch {
+        return { kind: 'failed', message: 'Start the local analysis service to enable manual OANDA runs.' };
       }
     },
     async listRecentRuns(limit) {

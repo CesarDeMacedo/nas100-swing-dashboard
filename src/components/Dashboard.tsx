@@ -42,9 +42,12 @@ type DashboardProps = {
   onOpenOandaPreview?: () => void;
   savedMetadata?: { provenance: string; sourceTime: string | null; latestPrice: number | null; liveStatus: string | null };
   oandaStatus?: 'checking' | OandaProviderStatus;
+  oandaManualRunState?: 'idle' | 'running' | ManualRunResult['kind'];
+  oandaManualRunResult?: ManualRunResult | null;
+  onRunOandaNow?: () => void;
 };
 
-export function Dashboard({ analysis, candleResult, dashboardState, serviceAvailability, manualRunState, manualRunResult, onManualRun, historyOpen = false, history, historyDetail, selectedHistoryRunKey = null, onOpenHistory, onCloseHistory, onRefreshHistory, historyLimit, onChangeHistoryLimit, onSelectHistoryRun, onViewHistoryInDashboard, savedOandaProvenance, savedSourceCandleTime, onReturnToMock, liveObservationStatus, liveObservationPrice, onOpenOandaPreview, savedMetadata, oandaStatus }: DashboardProps) {
+export function Dashboard({ analysis, candleResult, dashboardState, serviceAvailability, manualRunState, manualRunResult, onManualRun, historyOpen = false, history, historyDetail, selectedHistoryRunKey = null, onOpenHistory, onCloseHistory, onRefreshHistory, historyLimit, onChangeHistoryLimit, onSelectHistoryRun, onViewHistoryInDashboard, savedOandaProvenance, savedSourceCandleTime, onReturnToMock, liveObservationStatus, liveObservationPrice, onOpenOandaPreview, savedMetadata, oandaStatus, oandaManualRunState, oandaManualRunResult, onRunOandaNow }: DashboardProps) {
   const state = dashboardState;
 
   return (
@@ -66,6 +69,9 @@ export function Dashboard({ analysis, candleResult, dashboardState, serviceAvail
           liveObservationPrice={liveObservationPrice}
           onOpenOandaPreview={onOpenOandaPreview}
           oandaStatus={oandaStatus}
+          oandaManualRunState={oandaManualRunState}
+          oandaManualRunResult={oandaManualRunResult}
+          onRunOandaNow={onRunOandaNow}
         />
         <PrimaryActionBanner
           action={state?.action ?? analysis.action}

@@ -41,7 +41,7 @@ describe('dashboard rendering', () => {
       alreadyExists: false,
     },
   };
-  const client = (checkHealth: LocalAnalysisServiceClient['checkHealth'], runManualFixture: LocalAnalysisServiceClient['runManualFixture'], listRecentRuns: LocalAnalysisServiceClient['listRecentRuns'] = async () => ({ kind: 'empty', runs: [] }), getRunByKey: LocalAnalysisServiceClient['getRunByKey'] = async () => ({ kind: 'failed', message: 'not selected' })): LocalAnalysisServiceClient => ({ checkHealth, runManualFixture, listRecentRuns, getRunByKey });
+  const client = (checkHealth: LocalAnalysisServiceClient['checkHealth'], runManualFixture: LocalAnalysisServiceClient['runManualFixture'], listRecentRuns: LocalAnalysisServiceClient['listRecentRuns'] = async () => ({ kind: 'empty', runs: [] }), getRunByKey: LocalAnalysisServiceClient['getRunByKey'] = async () => ({ kind: 'failed', message: 'not selected' }), extra: Partial<LocalAnalysisServiceClient> = {}): LocalAnalysisServiceClient => ({ checkHealth, runManualFixture, listRecentRuns, getRunByKey, ...extra });
   const historyItem = { run: { id: 'run-1', runKey: 'fixture-run', completedAt: '2026-07-22T01:01:00.000Z', status: 'COMPLETED', source: 'fixture', persistedAt: '2026-07-22T01:01:01.000Z', reportId: 'report-1' }, report: { action: 'WAIT_FOR_PULLBACK', direction: 'long', score: 38, grade: 'D', sourceCandleTime: '2026-07-22T01:00:00.000Z', isActionable: false } };
   const secondHistoryItem = { run: { id: 'run-2', runKey: 'fixture-run-2', completedAt: '2026-07-22T05:01:00.000Z', status: 'COMPLETED', source: 'fixture', persistedAt: '2026-07-22T05:01:01.000Z', reportId: 'report-2' }, report: { action: 'SELL', direction: 'short', score: 82, grade: 'A', sourceCandleTime: '2026-07-22T05:00:00.000Z', isActionable: true } };
   const historyDetail: RunDetailResult = { kind: 'succeeded', item: historyItem, report: { ...historyItem.report, primaryReason: 'Pullback location is pending.', entryTrigger: null, stopPrice: null, targets: [], estimatedRewardRisk: null } };
@@ -80,6 +80,48 @@ describe('dashboard rendering', () => {
     fireEvent.click(button);
     expect(await screen.findByText('Could not save mock analysis')).toBeVisible();
     expect(screen.queryByText(/trade executed/i)).not.toBeInTheDocument();
+  });
+
+  it('runs a manual OANDA analysis on demand, reusing the same runKey dedup surfaced as already_exists', async () => {
+    const oandaRun: ManualRunResult = { kind: 'succeeded', run: { ...run.run, runKey: 'oanda-run', alreadyExists: false } };
+    const runManualOanda = vi.fn()
+      .mockResolvedValueOnce(oandaRun)
+      .mockResolvedValueOnce({ ...oandaRun, kind: 'already_exists' as const, run: { ...oandaRun.run, alreadyExists: true } });
+    const checkOandaStatus: LocalAnalysisServiceClient['checkOandaStatus'] = async () => ({ kind: 'configured', environment: 'practice', configuredInstrument: true });
+    render(<App serviceClient={client(async () => ({ kind: 'available' }), async () => run, undefined, undefined, { checkOandaStatus, runManualOanda })} />);
+
+    const button = await screen.findByRole('button', { name: 'Run OANDA analysis now' });
+    fireEvent.click(button);
+    expect(button).toBeDisabled();
+    expect(await screen.findByText('OANDA analysis run saved.')).toBeVisible();
+    expect(button).not.toBeDisabled();
+
+    fireEvent.click(button);
+    expect(await screen.findByText('Already analyzed this H4 candle — no new run needed.')).toBeVisible();
+    expect(runManualOanda).toHaveBeenCalledTimes(2);
+  });
+
+  it('ignores a second click on the OANDA run button while the first request is still in flight', async () => {
+    let resolveRun: (value: ManualRunResult) => void = () => {};
+    const runManualOanda = vi.fn(() => new Promise<ManualRunResult>((resolve) => { resolveRun = resolve; }));
+    const checkOandaStatus: LocalAnalysisServiceClient['checkOandaStatus'] = async () => ({ kind: 'configured', environment: 'practice', configuredInstrument: true });
+    render(<App serviceClient={client(async () => ({ kind: 'available' }), async () => run, undefined, undefined, { checkOandaStatus, runManualOanda })} />);
+
+    const button = await screen.findByRole('button', { name: 'Run OANDA analysis now' });
+    fireEvent.click(button);
+    fireEvent.click(button);
+    fireEvent.click(button);
+    resolveRun({ kind: 'succeeded', run: { ...run.run, runKey: 'oanda-run', alreadyExists: false } });
+    await screen.findByText('OANDA analysis run saved.');
+
+    expect(runManualOanda).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not offer the OANDA run button when OANDA is not configured', async () => {
+    render(<App serviceClient={client(async () => ({ kind: 'available' }), async () => run)} />);
+
+    expect(await screen.findByRole('button', { name: 'Run mock analysis' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Run OANDA analysis now' })).not.toBeInTheDocument();
   });
 
   it('keeps the compact mock-service utility separate from the title flow', async () => {
