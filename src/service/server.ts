@@ -201,8 +201,8 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
         try {
           const result = await executeManualOandaAnalysis(repository, oandaProvider, oandaConfiguration.nas100Instrument);
           return { outcome: result.outcome, runKey: result.run.runKey, message: result.message };
-        } catch {
-          return { outcome: 'failed', runKey: 'oanda:request-failed', message: 'Scheduled OANDA analysis could not be completed.' };
+        } catch (cause) {
+          return { outcome: 'failed', runKey: 'oanda:request-failed', message: cause instanceof Error ? cause.message : 'Scheduled OANDA analysis could not be completed.' };
         }
       }
       const result = runSyntheticFixtureAnalysis(repository);

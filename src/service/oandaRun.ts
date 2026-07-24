@@ -299,11 +299,11 @@ export const runManualOandaAnalysis = (repository: AnalysisRepository, source: O
       id: randomUUID(), runKey, startedAt, completedAt: new Date().toISOString(), status: 'COMPLETED', source: 'manual',
     }, report);
     return { ...base, ...multiTimeframe, outcome: 'created', run, report };
-  } catch {
+  } catch (cause) {
     const runKey = ['oanda-v20', source.instrument, 'H4', 'failed', OANDA_STRATEGY_VERSION, startedAt].join(':');
     const run = repository.saveNonCompletedRun({
       id: randomUUID(), runKey, startedAt, completedAt: new Date().toISOString(), status: 'FAILED', source: 'manual',
-      errorMessage: 'Manual OANDA analysis could not be completed.',
+      errorMessage: cause instanceof Error ? cause.message : 'Manual OANDA analysis could not be completed.',
     });
     return { ...base, outcome: 'failed', run, report: null, message: run.errorMessage ?? undefined };
   }
