@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 
 import { AppShell } from './components/AppShell';
 import { Dashboard } from './components/Dashboard';
@@ -105,6 +105,31 @@ export default function App({
     return () => {
       active = false;
     };
+  }, [serviceAvailability, serviceClient]);
+
+  // On startup, show the most recently persisted OANDA report instead of mock, if one
+  // exists — real data the user already has, no new OANDA API call. Falls back to mock
+  // (unchanged default) when the service is unavailable or no OANDA report has ever been
+  // saved. Runs once per session: attemptedAutoLoad guards against firing again if the
+  // user later returns to mock manually (serviceAvailability can still re-trigger deps).
+  const attemptedAutoLoad = useRef(false);
+  useEffect(() => {
+    if (serviceAvailability !== 'available' || attemptedAutoLoad.current) return;
+    attemptedAutoLoad.current = true;
+    let active = true;
+    (async () => {
+      const historyResult = await serviceClient.listRecentRuns(20);
+      if (!active || historyResult.kind !== 'succeeded') return;
+      const latestOandaRun = historyResult.runs.find((item) => item.run.runKey.startsWith('oanda-v20:') && item.report !== null);
+      if (!latestOandaRun) return;
+      const detail = await serviceClient.getRunByKey(latestOandaRun.run.runKey);
+      if (!active || detail.kind !== 'succeeded' || !detail.report.displaySnapshot) return;
+      viewSavedOandaAnalysis(detail.report.displaySnapshot);
+    })();
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [serviceAvailability, serviceClient]);
 
   useEffect(() => {

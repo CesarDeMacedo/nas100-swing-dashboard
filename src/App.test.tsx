@@ -149,7 +149,10 @@ describe('dashboard rendering', () => {
     expect(screen.getAllByText('Not available').length).toBeGreaterThan(0);
     expect(screen.getByLabelText('Current action: WAIT FOR PULLBACK')).toBeVisible();
     fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
-    expect(listRecentRuns).toHaveBeenCalledTimes(2);
+    // 1 (startup auto-load check for a saved OANDA report to show by default) + 1 (opening
+    // history) + 1 (this refresh click) — historyItem's runKey isn't an OANDA one, so
+    // auto-load finds nothing to switch to, but it still calls listRecentRuns once on mount.
+    expect(listRecentRuns).toHaveBeenCalledTimes(3);
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(screen.queryByRole('dialog', { name: 'Analysis history' })).not.toBeInTheDocument();
   });
@@ -253,6 +256,45 @@ describe('dashboard rendering', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Return to mock dashboard' }));
     expect(screen.queryByText('OANDA PRACTICE — SAVED ANALYSIS')).not.toBeInTheDocument();
     expect(await screen.findByTestId('current-price-marker')).toHaveTextContent('29,082');
+  });
+
+  it('shows the most recently saved OANDA report on startup instead of mock, without any click', async () => {
+    const savedAnalysis = structuredClone(actionFixtures.WAIT) as Record<string, unknown>;
+    Object.assign(savedAnalysis, { id: 'saved-oanda-auto', instrument: 'NAS100_USD', displayName: 'NAS100_USD', dataProvider: 'OANDA v20', currentPrice: 30123 });
+    const snapshot = {
+      provider: 'oanda-v20' as const, environment: 'practice' as const, instrument: 'NAS100_USD', timeframe: 'H4' as const,
+      candles: [{ time: '2026-07-22T00:00:00.000Z', open: 30100, high: 30140, low: 30080, close: 30123, isClosed: true, instrument: 'NAS100_USD', timeframe: 'H4', source: 'oanda-v20' }],
+      analysis: savedAnalysis, h4SourceCandleTime: '2026-07-22T00:00:00.000Z', dailySourceCandleTime: null, warnings: [],
+    };
+    // Only a real OANDA run (runKey prefixed oanda-v20:) is eligible for startup auto-load —
+    // this is what distinguishes it from an ordinary fixture-run history entry.
+    const oandaHistoryItem = { run: { id: 'run-oanda-1', runKey: 'oanda-v20:NAS100_USD:H4:2026-07-22T00:00:00.000Z:1.0.0:1.0.0', completedAt: '2026-07-22T01:01:00.000Z', status: 'COMPLETED', source: 'manual', persistedAt: '2026-07-22T01:01:01.000Z', reportId: 'report-oanda-1' }, report: { action: 'WAIT', direction: 'none', score: 38, grade: 'D', sourceCandleTime: '2026-07-22T00:00:00.000Z', isActionable: false } };
+    const detail: RunDetailResult = { kind: 'succeeded', item: oandaHistoryItem, report: { ...historyDetail.report, displaySnapshot: snapshot } };
+    const listRecentRuns = vi.fn<LocalAnalysisServiceClient['listRecentRuns']>().mockResolvedValue({ kind: 'succeeded', runs: [oandaHistoryItem] } as HistoryResult);
+    const getRunByKey = vi.fn<LocalAnalysisServiceClient['getRunByKey']>().mockResolvedValue(detail);
+    render(<App serviceClient={client(async () => ({ kind: 'available' }), async () => run, listRecentRuns, getRunByKey)} />);
+
+    expect(await screen.findByText('OANDA PRACTICE — SAVED ANALYSIS', {}, { timeout: 3000 })).toBeVisible();
+    expect(screen.getByTestId('current-price-marker')).toHaveTextContent('30,123');
+    expect(getRunByKey).toHaveBeenCalledWith(oandaHistoryItem.run.runKey);
+  });
+
+  it('keeps showing mock on startup when no OANDA report has ever been saved, only fixture runs', async () => {
+    const listRecentRuns = vi.fn<LocalAnalysisServiceClient['listRecentRuns']>().mockResolvedValue({ kind: 'succeeded', runs: [historyItem] } as HistoryResult);
+    render(<App serviceClient={client(async () => ({ kind: 'available' }), async () => run, listRecentRuns)} />);
+
+    await waitFor(() => expect(listRecentRuns).toHaveBeenCalled());
+    expect(screen.queryByText('OANDA PRACTICE — SAVED ANALYSIS')).not.toBeInTheDocument();
+    expect(screen.getByTestId('current-price-marker')).toHaveTextContent('29,082');
+  });
+
+  it('does not auto-load a saved OANDA report while the local service is unavailable', async () => {
+    const listRecentRuns = vi.fn<LocalAnalysisServiceClient['listRecentRuns']>();
+    render(<App serviceClient={client(async () => ({ kind: 'unavailable', message: 'offline' }), async () => ({ kind: 'failed', message: 'offline' }), listRecentRuns)} />);
+
+    expect(await screen.findByText('Service unavailable')).toBeVisible();
+    expect(listRecentRuns).not.toHaveBeenCalled();
+    expect(screen.getByTestId('current-price-marker')).toHaveTextContent('29,082');
   });
 
   it('shows empty and failed history states without execution wording', async () => {
