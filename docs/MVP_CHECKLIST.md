@@ -3,7 +3,8 @@
 ## Current delivered workflow
 
 - [x] Manual read-only OANDA H4/Daily analysis with completed-candle safety and immutable saved snapshots.
-- [x] Eligible saved OANDA reports open in the main dashboard; refresh defaults to mock data.
+- [x] Eligible saved OANDA reports open in the main dashboard; on startup the dashboard auto-shows the most recently saved OANDA report (local lookup only), falling back to mock data when unavailable or none exists.
+- [x] A manual "Run OANDA analysis now" header button runs `POST /runs/manual-oanda` on demand (dedup-aware, disabled while in flight) and immediately switches the dashboard to the resulting saved analysis, without a separate History → "View in dashboard" step.
 - [x] On-demand read-only OANDA H4 Chart Preview.
 - [x] Chart zoom, pan, price-scale adjustment, pinch zoom, double-click reset, and explicit Reset view.
 - [x] Optional OANDA scheduler mode remains explicitly opt-in; fixture remains the default.

@@ -6,7 +6,7 @@ The NAS100 Swing Intelligence Dashboard is a decision-support interface for revi
 
 - Deterministic strategy engine implemented.
 - The dashboard and Markdown report use the same calculated `DashboardState`.
-- 311 tests currently pass.
+- 318 tests currently pass.
 - The dashboard and fixture scheduler remain synthetic; manual and scheduled OANDA reports are read-only, with retry/backoff (C4), live cross-market confirmation (A1), and a Forex Factory event-risk validation spike (A2).
 - Scheduler outcomes trigger a local, informational-only OS notification (A5).
 - Entry authorization from the OANDA pipeline remains hard-blocked regardless of any input, pending a production-grade event-risk provider (see `docs/DECISIONS.md` ADR-016) — the application has no trade execution capability anywhere.
@@ -41,11 +41,13 @@ Create an OANDA Practice account in the OANDA portal, generate a personal API to
 
 OANDA data is not connected to the dashboard or scheduler. Manual OANDA reports use the deterministic report pipeline and local persistence only; the service uses GET-only OANDA requests and has no order, trade, or account-modification capability.
 
-`POST /runs/manual-oanda` requests 250 OANDA midpoint H4 candles and 250 Daily candles, keeping the completed datasets separate: H4 serves structure and decisions; Daily serves Daily Regime only. Open candles are excluded and both source timestamps are saved with the immutable local report. It is manual and read-only; it fetches live cross-market H4 confirmation (US500, US30, Russell 2000, same OANDA account) and an event-risk validation spike (Forex Factory), but it cannot authorize an entry regardless — entry authorization stays hard-blocked pending a production-grade event-risk provider (see `docs/DECISIONS.md` ADR-016). The dashboard still defaults to mock data, the scheduler remains synthetic and unchanged, and no trades can be executed.
+`POST /runs/manual-oanda` requests 250 OANDA midpoint H4 candles and 250 Daily candles, keeping the completed datasets separate: H4 serves structure and decisions; Daily serves Daily Regime only. Open candles are excluded and both source timestamps are saved with the immutable local report. It is manual and read-only; it fetches live cross-market H4 confirmation (US500, US30, Russell 2000, same OANDA account) and an event-risk validation spike (Forex Factory), but it cannot authorize an entry regardless — entry authorization stays hard-blocked pending a production-grade event-risk provider (see `docs/DECISIONS.md` ADR-016). The scheduler remains synthetic and unchanged, and no trades can be executed.
+
+A "Run OANDA analysis now" header button triggers `POST /runs/manual-oanda` on demand, reusing the same dedup-by-`runKey` and safety clamp as the scheduler; a duplicate click against an already-analyzed H4 candle surfaces the existing `alreadyExists` result rather than erroring. The button is disabled while a request is in flight to prevent duplicate concurrent calls. On a successful (or already-exists) result, the dashboard immediately switches to show that saved analysis — no separate trip through Analysis History and "View in dashboard" is required.
 
 New OANDA reports calculate deterministic completed-H4 support, resistance, preferred-entry, and informational invalidation levels with ATR-based buffers. Existing local reports remain immutable. Saved OANDA reports can be opened from Analysis History in the dashboard (see below).
 
-Saved OANDA reports that include a display snapshot can be reviewed in the dashboard as historical saved analysis, not live streaming. Mock data remains the default after refresh; the scheduler and automatic OANDA loading remain unchanged.
+Saved OANDA reports that include a display snapshot can be reviewed in the dashboard as historical saved analysis, not live streaming. On startup, the dashboard automatically shows the most recently saved OANDA report if one exists (a local history lookup only — no new OANDA API call and no automatic analysis run); it falls back to mock data when the local service is unavailable or no OANDA report has ever been saved. "Return to mock dashboard" always remains available. The scheduler and automatic OANDA loading otherwise remain unchanged.
 
 The scheduler defaults to synthetic fixture mode. Set `NAS100_DASHBOARD_SCHEDULER_PROVIDER=oanda` only for an explicit read-only OANDA opt-in while `npm run service` is active; Toronto slots are unchanged. The OANDA fetch retries with backoff on transient errors or a not-yet-available H4 candle, without ever accepting data from the wrong H4 window.
 
@@ -53,7 +55,7 @@ When viewing a saved OANDA analysis, the dashboard can observe local server-rela
 
 The dashboard also provides an on-demand, read-only OANDA H4 chart preview. It renders local-service candle data only and does not run strategy analysis.
 
-The shared candlestick chart supports mouse-wheel zoom, drag-to-pan, price-scale adjustment, double-click scale reset, pinch zoom, and an explicit Reset view. Saved OANDA metadata is shown compactly near the chart; mock data remains the default after refresh. The chart panel can export itself as a PNG on demand (client-side canvas screenshot, no server involvement) — a modest start on the planned full 16:9 setup-card export.
+The shared candlestick chart supports mouse-wheel zoom, drag-to-pan, price-scale adjustment, double-click scale reset, pinch zoom, and an explicit Reset view. Saved OANDA metadata is shown compactly near the chart. The chart panel can export itself as a PNG on demand (client-side canvas screenshot, no server involvement) — a modest start on the planned full 16:9 setup-card export.
 
 Once the local service is confirmed available, `OandaStatusBadge` passively surfaces OANDA configuration status (not configured / invalid / unavailable / healthy) in the dashboard header, without requiring a manual OANDA action first.
 

@@ -2,7 +2,7 @@
 
 ## Current saved-OANDA behavior
 
-The dashboard defaults to mock data on refresh. A saved OANDA report can be opened from Analysis History and is rendered from its immutable non-sensitive snapshot; no mock values are mixed into that view. OANDA Chart Preview is a separate on-demand chart-only screen and does not run strategy analysis. The chart supports wheel zoom, drag pan, price-scale adjustment, pinch zoom, double-click scale reset, and Reset view. Saved provenance and source H4 metadata are compactly displayed near the chart. Experimental live observation must not be described as reliable real-time until lifecycle tests are complete.
+On startup, the dashboard shows the most recently saved OANDA report if one exists (a local history lookup only, no new OANDA API call, no automatic analysis run); it falls back to mock data when the local service is unavailable or no OANDA report has ever been saved. A saved OANDA report can also be opened from Analysis History, or shown immediately after clicking "Run OANDA analysis now", and is rendered from its immutable non-sensitive snapshot in all three cases; no mock values are mixed into that view. "Return to mock dashboard" always remains available. OANDA Chart Preview is a separate on-demand chart-only screen and does not run strategy analysis. The chart supports wheel zoom, drag pan, price-scale adjustment, pinch zoom, double-click scale reset, and Reset view. Saved provenance and source H4 metadata are compactly displayed near the chart. Experimental live observation must not be described as reliable real-time until lifecycle tests are complete.
 
 ## Visual direction
 

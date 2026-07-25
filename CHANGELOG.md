@@ -1,5 +1,28 @@
 # Changelog
 
+## Immediate Dashboard Display After Manual OANDA Run
+
+- Clicking "Run OANDA analysis now" now shows the resulting saved analysis on the dashboard immediately, instead of requiring the user to open Analysis History and click "View in dashboard" separately.
+- On a `succeeded` or `already_exists` result, the client fetches the full saved report by `runKey` and reuses the existing saved-OANDA display path; a failed or malformed result leaves the dashboard untouched.
+
+## Startup Auto-Load of the Last Saved OANDA Report
+
+- On startup, the dashboard now shows the most recently persisted OANDA report instead of mock data, when one exists — a local history lookup only, no new OANDA API call and no automatically triggered analysis.
+- Falls back to mock data (unchanged default) when the local service is unavailable or no OANDA report has ever been saved; "Return to mock dashboard" remains available at all times.
+
+## Dashboard/Chart UX Pass
+
+- Restructured the dashboard header and chart header into two clear rows (title, then actions/status) with `flex-wrap`, fixing real text-overlap bugs at standard viewport widths instead of a cosmetic tweak.
+- Fixed resistance/support price labels overlapping and requiring manual panning by anchoring them dynamically to the last candle's real screen coordinate instead of a fixed pane-relative offset; moved the "COMPLETED H4" badge off the same corner.
+- Fixed both the main dashboard chart and the OANDA chart preview screen not using their full available window height (a CSS Grid track/item-count mismatch and a missing layout class, respectively).
+- Removed the large redundant "WAIT FOR PULLBACK" text overlay in the middle of the chart (already shown in the top banner) and shrank the oversized top action banner.
+- Gave the sidebar's four analysis cards visual hierarchy (`emphasis: 'primary' | 'secondary'`) instead of identical treatment, and gave the previously unstyled `OandaManualRunControl` button the shared header-action-button skin.
+
+## Manual OANDA Run Button
+
+- Added a "Run OANDA analysis now" button to the dashboard header, reusing the existing `POST /runs/manual-oanda` endpoint (same safety clamp, same `runKey` dedup) instead of waiting for a scheduled slot.
+- Disabled while a request is in flight to prevent duplicate concurrent calls; an `already_exists` result (current H4 candle already analyzed) is surfaced as expected dedup behavior, not an error. The scheduler and its Toronto slots are untouched.
+
 ## Safety-Clamp Regression Proof
 
 - Added a dedicated test constructing a fully realistic scenario (confirmed bullish H4 pullback, cross-market CONFIRMING, clean event-risk, R:R >= 2.0) where the underlying pipeline genuinely computes `BUY`, then asserts the OANDA pipeline's `runManualOandaAnalysis` still returns WAIT.
