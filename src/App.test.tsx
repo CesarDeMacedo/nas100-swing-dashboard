@@ -101,6 +101,29 @@ describe('dashboard rendering', () => {
     expect(runManualOanda).toHaveBeenCalledTimes(2);
   });
 
+  it('shows the just-run OANDA analysis on the dashboard immediately, without opening history', async () => {
+    const oandaRun: ManualRunResult = { kind: 'succeeded', run: { ...run.run, runKey: 'oanda-v20:NAS100_USD:H4:2026-07-22T00:00:00.000Z:1.0.0:1.0.0', alreadyExists: false } };
+    const runManualOanda = vi.fn().mockResolvedValue(oandaRun);
+    const savedAnalysis = structuredClone(actionFixtures.WAIT) as Record<string, unknown>;
+    Object.assign(savedAnalysis, { id: 'saved-oanda-manual', instrument: 'NAS100_USD', displayName: 'NAS100_USD', dataProvider: 'OANDA v20', currentPrice: 30123 });
+    const snapshot = {
+      provider: 'oanda-v20' as const, environment: 'practice' as const, instrument: 'NAS100_USD', timeframe: 'H4' as const,
+      candles: [{ time: '2026-07-22T00:00:00.000Z', open: 30100, high: 30140, low: 30080, close: 30123, isClosed: true, instrument: 'NAS100_USD', timeframe: 'H4', source: 'oanda-v20' }],
+      analysis: savedAnalysis, h4SourceCandleTime: '2026-07-22T00:00:00.000Z', dailySourceCandleTime: null, warnings: [],
+    };
+    const detail: RunDetailResult = { kind: 'succeeded', item: historyItem, report: { ...historyDetail.report, displaySnapshot: snapshot } };
+    const getRunByKey = vi.fn<LocalAnalysisServiceClient['getRunByKey']>().mockResolvedValue(detail);
+    const checkOandaStatus: LocalAnalysisServiceClient['checkOandaStatus'] = async () => ({ kind: 'configured', environment: 'practice', configuredInstrument: true });
+    render(<App serviceClient={client(async () => ({ kind: 'available' }), async () => run, undefined, getRunByKey, { checkOandaStatus, runManualOanda })} />);
+
+    const button = await screen.findByRole('button', { name: 'Run OANDA analysis now' });
+    fireEvent.click(button);
+
+    expect(await screen.findByText('OANDA PRACTICE — SAVED ANALYSIS', {}, { timeout: 3000 })).toBeVisible();
+    expect(screen.getByTestId('current-price-marker')).toHaveTextContent('30,123');
+    expect(getRunByKey).toHaveBeenCalledWith(oandaRun.run.runKey);
+  });
+
   it('ignores a second click on the OANDA run button while the first request is still in flight', async () => {
     let resolveRun: (value: ManualRunResult) => void = () => {};
     const runManualOanda = vi.fn(() => new Promise<ManualRunResult>((resolve) => { resolveRun = resolve; }));

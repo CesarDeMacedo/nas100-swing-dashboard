@@ -200,6 +200,12 @@ export default function App({
     setOandaManualRunResult(manualRun);
     setOandaManualRunState(manualRun.kind);
     if (historyOpen) void loadHistory();
+    if (manualRun.kind === 'succeeded' || manualRun.kind === 'already_exists') {
+      const detail = await serviceClient.getRunByKey(manualRun.run.runKey);
+      if (detail.kind === 'succeeded' && detail.report.displaySnapshot) {
+        viewSavedOandaAnalysis(detail.report.displaySnapshot);
+      }
+    }
   };
 
   const loadHistory = async (limit = historyLimit) => {
