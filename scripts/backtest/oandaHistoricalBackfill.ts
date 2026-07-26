@@ -3,15 +3,32 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { parseOandaConfiguration } from '../../src/providers/oanda/config';
+import { OandaClientError } from '../../src/providers/oanda/oandaClient';
 import { OandaProvider } from '../../src/providers/oanda/oandaProvider';
 import type { OandaCandle, OandaCandleGranularity } from '../../src/providers/oanda/types';
 import { CROSS_MARKET_OANDA_SYMBOLS } from '../../src/service/oandaRun';
 import { loadProjectEnvironmentForServiceCli } from '../../src/service/server';
 
+const ONE_HOUR_MS = 60 * 60 * 1000;
+
+/** The minimal shape `fetchAdaptiveWindow`/`backfillInstrument` need from a provider — lets
+ * tests pass a lightweight stub instead of constructing a real `OandaProvider`. */
+export type OandaCandleRangeProvider = { getCandlesInRange: OandaProvider['getCandlesInRange'] };
+
 const moduleDir = dirname(fileURLToPath(import.meta.url));
 const CACHE_ROOT = join(moduleDir, '.cache', 'oanda');
 
-export type CacheFile = { instrument: string; timeframe: OandaCandleGranularity; candles: OandaCandle[]; fetchedThroughTime: string };
+export type CacheFile = {
+  instrument: string;
+  timeframe: OandaCandleGranularity;
+  candles: OandaCandle[];
+  /** Earliest point this cache is known to cover with no gaps — the `fromIso` a prior run was
+   * given, not necessarily the first candle's own time (the real series may start later, e.g.
+   * before an instrument existed). Lets a later run detect "you're asking further back than I
+   * have" instead of assuming any cache covers any requested `fromIso`. */
+  fetchedFromTime: string;
+  fetchedThroughTime: string;
+};
 
 const cachePath = (instrument: string, timeframe: OandaCandleGranularity) => join(CACHE_ROOT, instrument, `${timeframe}.json`);
 
@@ -37,13 +54,47 @@ const dedupeByTime = (candles: OandaCandle[]): OandaCandle[] => {
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-/** Chunked backfill for one (instrument, timeframe) pair across [fromIso, toIso]. OANDA's
- * `from`/`to` query still caps the candles returned per call (same ~5000 ceiling as `count`,
- * just enforced server-side) — so a multi-year range requires repeated calls, advancing the
- * cursor to the last candle actually returned each time. A no-progress guard prevents an
- * infinite loop if the API ever echoes back the same boundary candle without advancing. */
+/** Fetches one window starting at `windowStartIso`, adapting to OANDA's real response instead
+ * of guessing a safe range width up front. Starts optimistic — the entire remaining range up
+ * to `ceilingIso` — and on a `400` (range implies too many candles) halves the window and
+ * retries from the same start, until a request succeeds or the window shrinks to `minSpanMs`
+ * (at which point any further error is real and is thrown, not retried forever). Every call
+ * starts optimistic again rather than remembering the last size that worked, since "the same
+ * width works next time too" is itself an unverified assumption (calendar gaps, holidays, and
+ * DST all vary the true candle density per window).
+ *
+ * Returns `resolvedEndIso` — the end of the window that actually succeeded — separately from
+ * the candles themselves: a successful-but-empty result (a valid sub-window with no data, e.g.
+ * before an instrument existed) must still let the caller advance past exactly that window,
+ * not silently skip everything up to `ceilingIso`. */
+export async function fetchAdaptiveWindow(
+  provider: OandaCandleRangeProvider,
+  instrument: string,
+  timeframe: OandaCandleGranularity,
+  windowStartIso: string,
+  ceilingIso: string,
+  minSpanMs = ONE_HOUR_MS,
+): Promise<{ candles: OandaCandle[]; resolvedEndIso: string }> {
+  let spanMs = Date.parse(ceilingIso) - Date.parse(windowStartIso);
+  for (;;) {
+    const candidateEndIso = new Date(Math.min(Date.parse(windowStartIso) + spanMs, Date.parse(ceilingIso))).toISOString();
+    try {
+      const result = await provider.getCandlesInRange(instrument, timeframe, windowStartIso, candidateEndIso);
+      return { candles: result.candles, resolvedEndIso: candidateEndIso };
+    } catch (error) {
+      const rangeTooLarge = error instanceof OandaClientError && error.statusCode === 400;
+      if (!rangeTooLarge || spanMs <= minSpanMs) throw error;
+      spanMs = Math.max(minSpanMs, Math.floor(spanMs / 2));
+    }
+  }
+}
+
+/** Chunked backfill for one (instrument, timeframe) pair across [fromIso, toIso], advancing
+ * the cursor to real data (or the resolved end of an empty-but-valid window — see
+ * `fetchAdaptiveWindow`) each iteration. A no-progress guard prevents an infinite loop if the
+ * API ever echoes back the same boundary without advancing. */
 export async function backfillInstrument(
-  provider: OandaProvider,
+  provider: OandaCandleRangeProvider,
   instrument: string,
   timeframe: OandaCandleGranularity,
   fromIso: string,
@@ -51,21 +102,33 @@ export async function backfillInstrument(
   delayMs = 250,
 ): Promise<OandaCandle[]> {
   const existing = loadCache(instrument, timeframe);
-  let cursor = existing && existing.fetchedThroughTime > fromIso ? existing.fetchedThroughTime : fromIso;
+  // Only skip ahead to the cached frontier if that cache actually covers back to (or before)
+  // the requested start — otherwise a request for an earlier range than was ever fetched would
+  // silently jump straight to `fetchedThroughTime` and skip everything in between.
+  const cacheCoversRequestedStart = existing && existing.fetchedFromTime <= fromIso;
+  let cursor = cacheCoversRequestedStart && existing.fetchedThroughTime > fromIso ? existing.fetchedThroughTime : fromIso;
   const accumulated: OandaCandle[] = existing ? [...existing.candles] : [];
 
   while (cursor < toIso) {
-    const result = await provider.getCandlesInRange(instrument, timeframe, cursor, toIso);
-    if (result.candles.length === 0) break;
-    accumulated.push(...result.candles);
-    const lastTime = result.candles.at(-1)!.time;
+    const { candles, resolvedEndIso } = await fetchAdaptiveWindow(provider, instrument, timeframe, cursor, toIso);
+
+    if (candles.length === 0) {
+      if (resolvedEndIso <= cursor) break; // no-progress guard
+      cursor = resolvedEndIso;
+      if (cursor < toIso) await sleep(delayMs);
+      continue;
+    }
+
+    accumulated.push(...candles);
+    const lastTime = candles.at(-1)!.time;
     if (lastTime <= cursor) break; // no-progress guard
     cursor = lastTime;
     if (cursor < toIso) await sleep(delayMs);
   }
 
   const merged = dedupeByTime(accumulated);
-  saveCache({ instrument, timeframe, candles: merged, fetchedThroughTime: merged.at(-1)?.time ?? fromIso });
+  const fetchedFromTime = existing && existing.fetchedFromTime < fromIso ? existing.fetchedFromTime : fromIso;
+  saveCache({ instrument, timeframe, candles: merged, fetchedFromTime, fetchedThroughTime: merged.at(-1)?.time ?? fromIso });
   return merged;
 }
 

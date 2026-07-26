@@ -86,11 +86,16 @@ export class OandaProvider {
   }
 
   /** Historical backfill for the backtest harness. Unlike `getCandles`'s `count` param (capped
-   * client-side at 5000), this uses OANDA's `from`/`to` range query — the server still caps
-   * the number of candles returned per call (same ~5000 ceiling, enforced server-side instead
-   * of client-side), so a multi-year backfill still requires chunking across several calls
-   * (see scripts/backtest/oandaHistoricalBackfill.ts). Reuses the same normalize/validate path
-   * as `getCandles` so the harness ingests exactly the same `Candle` shape production does. */
+   * client-side at 5000), this uses OANDA's `from`/`to` range query. Confirmed empirically
+   * (direct API call): when the implied candle count for the requested range exceeds OANDA's
+   * ~5000 ceiling, the server does NOT truncate — it rejects the whole request with
+   * `400 {"errorMessage":"Maximum value for 'count' exceeded"}`. Callers over a wide date
+   * range must therefore shrink the window themselves and retry on that specific 400, rather
+   * than assuming a single call (or a naive fixed-size chunk) will succeed — see
+   * `fetchAdaptiveWindow` in `scripts/backtest/oandaHistoricalBackfill.ts`, which adapts to
+   * the actual API response instead of guessing a safe range width up front. Reuses the same
+   * normalize/validate path as `getCandles` so the harness ingests exactly the same `Candle`
+   * shape production does. */
   public async getCandlesInRange<TTimeframe extends OandaCandleGranularity>(instrument: string, timeframe: TTimeframe, fromIso: string, toIso: string): Promise<OandaCandleResult<TTimeframe>> {
     if (!instrument.trim()) throw new Error('An explicit OANDA instrument is required.');
     if (Number.isNaN(Date.parse(fromIso)) || Number.isNaN(Date.parse(toIso))) throw new Error('from/to must be valid ISO-8601 timestamps.');
