@@ -11,8 +11,6 @@ import type {
 import { AnalysisSidebar } from './sidebar/AnalysisSidebar';
 import { DashboardHeader } from './DashboardHeader';
 import { MetricsFooter } from './MetricsFooter';
-import { PrimaryActionBanner } from './PrimaryActionBanner';
-import { SetupSummary } from './SetupSummary';
 import { AnalysisHistoryPanel } from './AnalysisHistoryPanel';
 import { StrategyManagerPanel } from './StrategyManagerPanel';
 import { BacktestResultsPanel } from './BacktestResultsPanel';
@@ -189,21 +187,6 @@ export function Dashboard({
           oandaManualRunResult={oandaManualRunResult}
           onRunOandaNow={onRunOandaNow}
         />
-        <PrimaryActionBanner
-          action={state?.action ?? analysis.action}
-          label={state?.actionLabel}
-          reason={state?.primaryReason ?? analysis.reason}
-        />
-        <SetupSummary
-          score={state?.score ?? analysis.score}
-          grade={state?.grade ?? analysis.grade}
-          dailyRegime={state?.marketRegime ?? analysis.dailyRegime}
-          status={state?.setupStatus ?? analysis.status}
-          bias={state?.bias ?? analysis.bias}
-          confidence={analysis.confidence}
-          isActionable={state?.isActionable}
-          premiumSetupState={state?.premiumSetupState}
-        />
       </header>
       <div className="dashboard-main">
         <Suspense
@@ -218,16 +201,12 @@ export function Dashboard({
             candleResult={candleResult}
             dashboardState={state}
             savedMetadata={savedMetadata}
-            mrEvaluation={
-              mrEvaluationsList?.kind === 'succeeded'
-                ? (mrEvaluationsList.evaluations[0] ?? null)
-                : null
+            mrEvaluations={
+              mrEvaluationsList?.kind === 'succeeded' ? mrEvaluationsList.evaluations : []
             }
           />
         </Suspense>
         <AnalysisSidebar
-          analysis={analysis}
-          dashboardState={state}
           mrEvaluationsList={mrEvaluationsList}
           onOpenMrEvaluations={onOpenMrEvaluations}
         />

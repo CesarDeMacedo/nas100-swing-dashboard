@@ -34,11 +34,12 @@ type CandlestickChartPanelProps = {
     latestPrice: number | null;
     liveStatus: string | null;
   };
-  /** Latest live evaluation of the active mean-reversion strategy (Double Seven/RSI-2), if any
-   * — drawn as extra price lines on the same H4 chart (a distinct color from the pipeline's own
-   * entry/stop lines) so the strategy the user actually trades has a visible home on the chart
-   * they already watch, not just in the sidebar card or the history panel. */
-  mrEvaluation?: MeanReversionEvaluation | null;
+  /** Latest live evaluation of every active mean-reversion strategy (today: Double Seven D1
+   * and H4, running simultaneously) — drawn as extra price lines on the same H4 chart (colors
+   * distinct from the pipeline's own entry/stop lines, and from each other) so the strategies
+   * the user actually trades have a visible home on the chart they already watch, not just in
+   * the sidebar cards or the history panel. */
+  mrEvaluations?: readonly MeanReversionEvaluation[];
 };
 
 const chartPalette: ChartPalette = {
@@ -56,7 +57,7 @@ function ValidCandlestickChart({
   dataset,
   dashboardState,
   savedMetadata,
-  mrEvaluation,
+  mrEvaluations,
 }: {
   analysis: SafeAnalysis;
   dataset: CandleDataset;
@@ -67,7 +68,7 @@ function ValidCandlestickChart({
     latestPrice: number | null;
     liveStatus: string | null;
   };
-  mrEvaluation?: MeanReversionEvaluation | null;
+  mrEvaluations?: readonly MeanReversionEvaluation[];
 }) {
   const [resetKey, setResetKey] = useState(0);
   const chartHandleRef = useRef<FinancialChartHandle>(null);
@@ -104,10 +105,10 @@ function ValidCandlestickChart({
       latestCandle
         ? [
             ...mapPriceLines(visibleAnalysis, latestCandle.close, chartPalette),
-            ...mapMeanReversionPriceLines(mrEvaluation),
+            ...mapMeanReversionPriceLines(mrEvaluations),
           ]
         : [],
-    [visibleAnalysis, latestCandle, mrEvaluation],
+    [visibleAnalysis, latestCandle, mrEvaluations],
   );
 
   if (!latestCandle) return null;
@@ -190,7 +191,7 @@ export function CandlestickChartPanel({
   candleResult,
   dashboardState,
   savedMetadata,
-  mrEvaluation,
+  mrEvaluations,
 }: CandlestickChartPanelProps) {
   if (!candleResult.success) {
     return (
@@ -217,7 +218,7 @@ export function CandlestickChartPanel({
       dataset={candleResult.dataset}
       dashboardState={dashboardState}
       savedMetadata={savedMetadata}
-      mrEvaluation={mrEvaluation}
+      mrEvaluations={mrEvaluations}
     />
   );
 }

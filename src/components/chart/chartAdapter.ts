@@ -7,10 +7,15 @@ import type { MeanReversionEvaluation } from '../../serviceClient/localAnalysisS
 
 /** Deliberately outside ChartPalette: the mean-reversion overlay is a visually distinct system
  * from the pipeline's own entry/invalidation/stop/target lines (drawn from `mapPriceLines`) —
- * a violet neither `positive`/`negative`/`warning`/`info`/`neutral` uses, so the two strategies'
- * lines never get mistaken for one another on the same H4 chart. */
-const MR_ENTRY_COLOR = '#b388ff';
-const MR_STOP_COLOR = '#e56399';
+ * hues neither `positive`/`negative`/`warning`/`info`/`neutral` use, so pipeline and MR lines
+ * never get mistaken for one another. D1 and H4 also run simultaneously as two independent
+ * strategies (see docs/MR_LIVE_INTEGRATION_PLAN.md) and can each hold their own open position,
+ * so they get their own color pair too — otherwise two same-colored "MR entry" lines at
+ * different prices would be genuinely ambiguous about which strategy each belongs to. */
+const MR_LINE_COLORS: Record<'D' | 'H4', { entry: string; stop: string }> = {
+  D: { entry: '#b388ff', stop: '#e56399' },
+  H4: { entry: '#38bdf8', stop: '#fb923c' },
+};
 
 export type ChartPalette = {
   positive: string;
@@ -195,38 +200,42 @@ export function mapPriceLines(
   return lines;
 }
 
-/** Draws the live mean-reversion strategy's entry reference and stop directly on the H4 chart,
- * only while a position is actually tracked (ENTER/HOLD) — FLAT/EXIT would otherwise leave a
- * stale entry/stop line pointing at a trade that's already closed. `null`/`undefined` (no
- * active MR strategy, e.g. the mock dashboard) draws nothing. */
+/** Draws each live mean-reversion strategy's entry reference and stop directly on the H4
+ * chart, only while a position is actually tracked (ENTER/HOLD) — FLAT/EXIT would otherwise
+ * leave a stale entry/stop line pointing at a trade that's already closed. Accepts every
+ * active strategy's latest evaluation (today: Double Seven D1 and H4 running simultaneously)
+ * and gives each timeframe its own color pair + labeled title (`MR entry (D1)`/`MR entry (H4)`)
+ * so two independently-tracked positions never get confused for one another on one chart. An
+ * empty/undefined list (no active MR strategy, e.g. the mock dashboard) draws nothing. */
 export function mapMeanReversionPriceLines(
-  evaluation: MeanReversionEvaluation | null | undefined,
+  evaluations: readonly MeanReversionEvaluation[] | null | undefined,
 ): PriceLineModel[] {
-  if (!evaluation || (evaluation.signal !== 'ENTER' && evaluation.signal !== 'HOLD')) return [];
+  const lines: PriceLineModel[] = [];
+  for (const evaluation of evaluations ?? []) {
+    if (evaluation.signal !== 'ENTER' && evaluation.signal !== 'HOLD') continue;
+    const colors = MR_LINE_COLORS[evaluation.timeframe];
 
-  const lines: PriceLineModel[] = [
-    {
-      id: 'mr-entry',
+    lines.push({
+      id: `mr-entry-${evaluation.timeframe}`,
       price: evaluation.referenceClose,
-      title: 'MR entry',
-      color: MR_ENTRY_COLOR,
+      title: `MR entry (${evaluation.timeframe})`,
+      color: colors.entry,
       lineStyle: 'dashed',
       axisLabelVisible: true,
       lineWidth: 2,
-    },
-  ];
-
-  if (evaluation.stopPrice !== null) {
-    lines.push({
-      id: 'mr-stop',
-      price: evaluation.stopPrice,
-      title: 'MR stop',
-      color: MR_STOP_COLOR,
-      lineStyle: 'dashed',
-      axisLabelVisible: true,
-      lineWidth: 1,
     });
-  }
 
+    if (evaluation.stopPrice !== null) {
+      lines.push({
+        id: `mr-stop-${evaluation.timeframe}`,
+        price: evaluation.stopPrice,
+        title: `MR stop (${evaluation.timeframe})`,
+        color: colors.stop,
+        lineStyle: 'dashed',
+        axisLabelVisible: true,
+        lineWidth: 1,
+      });
+    }
+  }
   return lines;
 }
