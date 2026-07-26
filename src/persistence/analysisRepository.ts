@@ -3,7 +3,13 @@ import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 import type { SwingReport } from '../application/buildSwingReport';
-import { StrategyConfigInputSchema, type StrategyConfig, type StrategyConfigInput, type StrategyParameters, type StrategyStatus } from '../schemas/strategyConfig';
+import {
+  StrategyConfigInputSchema,
+  type StrategyConfig,
+  type StrategyConfigInput,
+  type StrategyParameters,
+  type StrategyStatus,
+} from '../schemas/strategyConfig';
 
 export const PERSISTENCE_SCHEMA_VERSION = 4;
 
@@ -160,7 +166,9 @@ const createSchema = (database: DatabaseSync) => {
       VALUES (1, '${new Date().toISOString()}');
   `);
 
-  const columns = database.prepare('PRAGMA table_info(analysis_runs)').all() as Array<{ name: string }>;
+  const columns = database.prepare('PRAGMA table_info(analysis_runs)').all() as Array<{
+    name: string;
+  }>;
   if (!columns.some((column) => column.name === 'triggered_by')) {
     database.exec(`
       ALTER TABLE analysis_runs ADD COLUMN triggered_by TEXT CHECK (triggered_by IN ('user', 'scheduler') OR triggered_by IS NULL);
@@ -188,7 +196,9 @@ const createSchema = (database: DatabaseSync) => {
       ON strategy_configs(strategy_id) WHERE status = 'active';
   `);
 
-  const runColumns = database.prepare('PRAGMA table_info(analysis_runs)').all() as Array<{ name: string }>;
+  const runColumns = database.prepare('PRAGMA table_info(analysis_runs)').all() as Array<{
+    name: string;
+  }>;
   if (!runColumns.some((column) => column.name === 'strategy_config_id')) {
     database.exec(`
       ALTER TABLE analysis_runs ADD COLUMN strategy_config_id TEXT REFERENCES strategy_configs(id);
@@ -240,7 +250,9 @@ const toStoredRun = (row: RunRow): StoredAnalysisRun => ({
   strategyConfigId: row.strategy_config_id,
 });
 
-const toStoredMeanReversionEvaluation = (row: MeanReversionEvaluationRow): StoredMeanReversionEvaluation => ({
+const toStoredMeanReversionEvaluation = (
+  row: MeanReversionEvaluationRow,
+): StoredMeanReversionEvaluation => ({
   id: row.id,
   strategyConfigId: row.strategy_config_id,
   strategyId: row.strategy_id,
@@ -378,7 +390,14 @@ export class AnalysisRepository {
         run.strategyConfigId ?? null,
       );
 
-    return { ...run, errorMessage: run.errorMessage ?? null, triggeredBy: run.triggeredBy ?? null, strategyConfigId: run.strategyConfigId ?? null, reportId: null, persistedAt };
+    return {
+      ...run,
+      errorMessage: run.errorMessage ?? null,
+      triggeredBy: run.triggeredBy ?? null,
+      strategyConfigId: run.strategyConfigId ?? null,
+      reportId: null,
+      persistedAt,
+    };
   }
 
   public listHistory(limit = 50): AnalysisHistoryItem[] {
@@ -424,7 +443,11 @@ export class AnalysisRepository {
    * place that runs `StrategyConfigInputSchema.parse()` — including the min-R:R->=2.0 floor
    * and the setup-score-weights-sum-to-100 refine — before any INSERT. The SQLite CHECK on
    * `min_reward_risk` is defense-in-depth only; it isn't the primary enforcement mechanism. */
-  public saveStrategyConfig(strategyId: string, version: number, input: StrategyConfigInput): StrategyConfig {
+  public saveStrategyConfig(
+    strategyId: string,
+    version: number,
+    input: StrategyConfigInput,
+  ): StrategyConfig {
     const parsed = StrategyConfigInputSchema.parse(input);
     const id = `${strategyId}:${version}`;
     const createdAt = new Date().toISOString();
@@ -434,15 +457,38 @@ export class AnalysisRepository {
           id, strategy_id, version, name, status, min_reward_risk, premium_score_threshold, config_json, created_at
         ) VALUES (?, ?, ?, ?, 'draft', ?, ?, ?, ?)`,
       )
-      .run(id, strategyId, version, parsed.name, parsed.parameters.minRewardRisk, parsed.parameters.premiumScoreThreshold, JSON.stringify(parsed.parameters), createdAt);
+      .run(
+        id,
+        strategyId,
+        version,
+        parsed.name,
+        parsed.parameters.minRewardRisk,
+        parsed.parameters.premiumScoreThreshold,
+        JSON.stringify(parsed.parameters),
+        createdAt,
+      );
 
-    return { id, strategyId, version, name: parsed.name, status: 'draft', parameters: parsed.parameters, createdAt };
+    return {
+      id,
+      strategyId,
+      version,
+      name: parsed.name,
+      status: 'draft',
+      parameters: parsed.parameters,
+      createdAt,
+    };
   }
 
   public listStrategies(status?: StrategyStatus): StrategyConfig[] {
     const rows = status
-      ? (this.database.prepare('SELECT * FROM strategy_configs WHERE status = ? ORDER BY strategy_id, version DESC').all(status) as StrategyConfigRow[])
-      : (this.database.prepare('SELECT * FROM strategy_configs ORDER BY strategy_id, version DESC').all() as StrategyConfigRow[]);
+      ? (this.database
+          .prepare(
+            'SELECT * FROM strategy_configs WHERE status = ? ORDER BY strategy_id, version DESC',
+          )
+          .all(status) as StrategyConfigRow[])
+      : (this.database
+          .prepare('SELECT * FROM strategy_configs ORDER BY strategy_id, version DESC')
+          .all() as StrategyConfigRow[]);
     return rows.map(toStrategyConfig);
   }
 
@@ -454,12 +500,15 @@ export class AnalysisRepository {
   }
 
   public getStrategyConfigById(id: string): StrategyConfig | null {
-    const row = this.database.prepare('SELECT * FROM strategy_configs WHERE id = ?').get(id) as StrategyConfigRow | undefined;
+    const row = this.database.prepare('SELECT * FROM strategy_configs WHERE id = ?').get(id) as
+      StrategyConfigRow | undefined;
     return row ? toStrategyConfig(row) : null;
   }
 
   public getNextStrategyVersion(strategyId: string): number {
-    const row = this.database.prepare('SELECT MAX(version) AS max_version FROM strategy_configs WHERE strategy_id = ?').get(strategyId) as { max_version: number | null };
+    const row = this.database
+      .prepare('SELECT MAX(version) AS max_version FROM strategy_configs WHERE strategy_id = ?')
+      .get(strategyId) as { max_version: number | null };
     return (row.max_version ?? 0) + 1;
   }
 
@@ -467,17 +516,26 @@ export class AnalysisRepository {
    * `archived`, then promotes `version` from `draft` to `active`. Only one version per
    * strategy may be `active` at a time (also enforced by the partial unique index). */
   public activateStrategyVersion(strategyId: string, version: number): StrategyConfig {
-    const target = this.database.prepare('SELECT * FROM strategy_configs WHERE strategy_id = ? AND version = ?').get(strategyId, version) as StrategyConfigRow | undefined;
+    const target = this.database
+      .prepare('SELECT * FROM strategy_configs WHERE strategy_id = ? AND version = ?')
+      .get(strategyId, version) as StrategyConfigRow | undefined;
     if (!target) throw new Error(`Strategy ${strategyId} version ${version} does not exist.`);
-    if (target.status !== 'draft') throw new Error(`Strategy ${strategyId} version ${version} is not a draft; only draft versions can be activated.`);
+    if (target.status !== 'draft')
+      throw new Error(
+        `Strategy ${strategyId} version ${version} is not a draft; only draft versions can be activated.`,
+      );
 
     this.database.exec('BEGIN IMMEDIATE');
     try {
       this.database
-        .prepare(`UPDATE strategy_configs SET status = 'archived' WHERE strategy_id = ? AND status = 'active'`)
+        .prepare(
+          `UPDATE strategy_configs SET status = 'archived' WHERE strategy_id = ? AND status = 'active'`,
+        )
         .run(strategyId);
       this.database
-        .prepare(`UPDATE strategy_configs SET status = 'active' WHERE strategy_id = ? AND version = ?`)
+        .prepare(
+          `UPDATE strategy_configs SET status = 'active' WHERE strategy_id = ? AND version = ?`,
+        )
         .run(strategyId, version);
       this.database.exec('COMMIT');
     } catch (error) {
@@ -490,7 +548,9 @@ export class AnalysisRepository {
 
   /** Append-only, like `saveCompletedRun` — a live MR evaluation is a point-in-time record,
    * never updated after the fact. */
-  public saveMeanReversionEvaluation(input: MeanReversionEvaluationInput): StoredMeanReversionEvaluation {
+  public saveMeanReversionEvaluation(
+    input: MeanReversionEvaluationInput,
+  ): StoredMeanReversionEvaluation {
     const persistedAt = new Date().toISOString();
     this.database
       .prepare(
@@ -526,8 +586,13 @@ export class AnalysisRepository {
     return { ...input, persistedAt };
   }
 
-  /** Latest evaluation per strategy config, newest first — the dashboard panel's "current
-   * signal per active MR strategy" view. */
+  /** Latest evaluation per CURRENTLY ACTIVE strategy config, newest first — the dashboard
+   * panel's "current signal per active MR strategy" view. Filtering on strategy_configs.status
+   * matters once a strategy has more than one version in its history (draft -> active ->
+   * archived): without it, a version that was later archived (superseded by a new active one,
+   * or deactivated) keeps showing its last stale evaluation here forever, alongside the
+   * current one — including a stale suggested position size computed under a risk% that may
+   * no longer apply. */
   public listLatestMeanReversionEvaluations(): StoredMeanReversionEvaluation[] {
     const rows = this.database
       .prepare(
@@ -539,17 +604,25 @@ export class AnalysisRepository {
          ) AS latest
            ON latest.strategy_config_id = mr.strategy_config_id
           AND latest.max_evaluated_at = mr.evaluated_at
+         INNER JOIN strategy_configs AS sc
+           ON sc.id = mr.strategy_config_id
+          AND sc.status = 'active'
          ORDER BY mr.evaluated_at DESC`,
       )
       .all() as MeanReversionEvaluationRow[];
     return rows.map(toStoredMeanReversionEvaluation);
   }
 
-  public listMeanReversionEvaluations(strategyConfigId: string, limit = 50): StoredMeanReversionEvaluation[] {
+  public listMeanReversionEvaluations(
+    strategyConfigId: string,
+    limit = 50,
+  ): StoredMeanReversionEvaluation[] {
     if (!Number.isInteger(limit) || limit < 1)
       throw new Error('Evaluation history limit must be a positive integer.');
     const rows = this.database
-      .prepare('SELECT * FROM mr_evaluations WHERE strategy_config_id = ? ORDER BY evaluated_at DESC LIMIT ?')
+      .prepare(
+        'SELECT * FROM mr_evaluations WHERE strategy_config_id = ? ORDER BY evaluated_at DESC LIMIT ?',
+      )
       .all(strategyConfigId, limit) as MeanReversionEvaluationRow[];
     return rows.map(toStoredMeanReversionEvaluation);
   }

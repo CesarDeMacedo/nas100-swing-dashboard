@@ -121,8 +121,16 @@ describe('AnalysisRepository', () => {
 
   it('persists an explicit triggeredBy for completed and non-completed runs', () => {
     const repository = createRepository();
-    const scheduled = repository.saveCompletedRun({ ...completedRun('scheduled-001'), triggeredBy: 'scheduler' }, currentReport());
-    const manual = repository.saveNonCompletedRun({ ...completedRun('manual-001'), status: 'BLOCKED', triggeredBy: 'user', errorMessage: 'Latest candle is open.' });
+    const scheduled = repository.saveCompletedRun(
+      { ...completedRun('scheduled-001'), triggeredBy: 'scheduler' },
+      currentReport(),
+    );
+    const manual = repository.saveNonCompletedRun({
+      ...completedRun('manual-001'),
+      status: 'BLOCKED',
+      triggeredBy: 'user',
+      errorMessage: 'Latest candle is open.',
+    });
 
     expect(scheduled.triggeredBy).toBe('scheduler');
     expect(manual.triggeredBy).toBe('user');
@@ -170,8 +178,28 @@ const strategyParameters = (overrides: Partial<StrategyParameters> = {}): Strate
   crossMarketPrimaryInstruments: ['us500', 'us30'],
   invalidationAnchor: 'deepest',
   strategyKind: 'pipeline',
-  meanReversion: { timeframe: 'D', smaFilterPeriod: 200, rsiPeriod: 2, rsiEntryThreshold: 5, rsiExitThreshold: 65, lookbackEntryLow: 7, lookbackExitHigh: 7, protectiveStopAtrMultiple: null, atrPeriod: 14, maxBarsHeld: null },
-  setupScoreWeights: { trend: 20, structure: 20, momentum: 15, location: 15, crossMarket: 10, eventRisk: 5, rewardRisk: 10, patienceReadiness: 5 },
+  meanReversion: {
+    timeframe: 'D',
+    smaFilterPeriod: 200,
+    rsiPeriod: 2,
+    rsiEntryThreshold: 5,
+    rsiExitThreshold: 65,
+    lookbackEntryLow: 7,
+    lookbackExitHigh: 7,
+    protectiveStopAtrMultiple: null,
+    atrPeriod: 14,
+    maxBarsHeld: null,
+  },
+  setupScoreWeights: {
+    trend: 20,
+    structure: 20,
+    momentum: 15,
+    location: 15,
+    crossMarket: 10,
+    eventRisk: 5,
+    rewardRisk: 10,
+    patienceReadiness: 5,
+  },
   eventRisk: { blockingWindowMinutes: 60, minImpact: 'High' },
   ...overrides,
 });
@@ -183,7 +211,10 @@ describe('AnalysisRepository strategy configs', () => {
     const version = repository.getNextStrategyVersion(strategyId);
     expect(version).toBe(1);
 
-    const saved = repository.saveStrategyConfig(strategyId, version, { name: 'Aggressive', parameters: strategyParameters() });
+    const saved = repository.saveStrategyConfig(strategyId, version, {
+      name: 'Aggressive',
+      parameters: strategyParameters(),
+    });
     expect(saved).toMatchObject({ strategyId, version: 1, status: 'draft', name: 'Aggressive' });
 
     expect(() =>
@@ -200,7 +231,18 @@ describe('AnalysisRepository strategy configs', () => {
     expect(() =>
       repository.saveStrategyConfig('strategy-bad-weights', 1, {
         name: 'Bad weights',
-        parameters: strategyParameters({ setupScoreWeights: { trend: 20, structure: 20, momentum: 15, location: 15, crossMarket: 10, eventRisk: 5, rewardRisk: 10, patienceReadiness: 99 } }),
+        parameters: strategyParameters({
+          setupScoreWeights: {
+            trend: 20,
+            structure: 20,
+            momentum: 15,
+            location: 15,
+            crossMarket: 10,
+            eventRisk: 5,
+            rewardRisk: 10,
+            patienceReadiness: 99,
+          },
+        }),
       }),
     ).toThrow();
     repository.close();
@@ -211,7 +253,10 @@ describe('AnalysisRepository strategy configs', () => {
     const strategyId = 'strategy-versioned';
     repository.saveStrategyConfig(strategyId, 1, { name: 'V1', parameters: strategyParameters() });
     repository.activateStrategyVersion(strategyId, 1);
-    repository.saveStrategyConfig(strategyId, 2, { name: 'V2', parameters: strategyParameters({ minRewardRisk: 2.5 }) });
+    repository.saveStrategyConfig(strategyId, 2, {
+      name: 'V2',
+      parameters: strategyParameters({ minRewardRisk: 2.5 }),
+    });
     repository.activateStrategyVersion(strategyId, 2);
 
     const versions = repository.getStrategyVersions(strategyId);
@@ -234,8 +279,14 @@ describe('AnalysisRepository strategy configs', () => {
   it('links an analysis run to the strategy config that produced it', () => {
     const repository = createRepository();
     const strategyId = 'strategy-linked';
-    const strategy = repository.saveStrategyConfig(strategyId, 1, { name: 'Linked', parameters: strategyParameters() });
-    const stored = repository.saveCompletedRun({ ...completedRun('linked-run'), strategyConfigId: strategy.id }, currentReport());
+    const strategy = repository.saveStrategyConfig(strategyId, 1, {
+      name: 'Linked',
+      parameters: strategyParameters(),
+    });
+    const stored = repository.saveCompletedRun(
+      { ...completedRun('linked-run'), strategyConfigId: strategy.id },
+      currentReport(),
+    );
 
     expect(stored.strategyConfigId).toBe(strategy.id);
     expect(repository.getRunByKey(stored.runKey)?.run.strategyConfigId).toBe(strategy.id);
@@ -243,7 +294,10 @@ describe('AnalysisRepository strategy configs', () => {
   });
 });
 
-const mrEvaluationInput = (strategyConfigId: string, overrides: Partial<Parameters<AnalysisRepository['saveMeanReversionEvaluation']>[0]> = {}) => ({
+const mrEvaluationInput = (
+  strategyConfigId: string,
+  overrides: Partial<Parameters<AnalysisRepository['saveMeanReversionEvaluation']>[0]> = {},
+) => ({
   id: `eval-${overrides.evaluatedAt ?? '1'}`,
   strategyConfigId,
   strategyId: 'strategy-mr',
@@ -268,8 +322,13 @@ const mrEvaluationInput = (strategyConfigId: string, overrides: Partial<Paramete
 describe('AnalysisRepository mean-reversion evaluations', () => {
   it('persists an immutable evaluation record and reads it back unchanged', () => {
     const repository = createRepository();
-    const strategy = repository.saveStrategyConfig('strategy-mr', 1, { name: 'MR', parameters: strategyParameters({ strategyKind: 'double7' }) });
-    const stored = repository.saveMeanReversionEvaluation(mrEvaluationInput(strategy.id, { signal: 'ENTER', stopPrice: 95, atr: 2.5 }));
+    const strategy = repository.saveStrategyConfig('strategy-mr', 1, {
+      name: 'MR',
+      parameters: strategyParameters({ strategyKind: 'double7' }),
+    });
+    const stored = repository.saveMeanReversionEvaluation(
+      mrEvaluationInput(strategy.id, { signal: 'ENTER', stopPrice: 95, atr: 2.5 }),
+    );
 
     expect(stored.signal).toBe('ENTER');
     expect(stored.stopPrice).toBe(95);
@@ -277,11 +336,27 @@ describe('AnalysisRepository mean-reversion evaluations', () => {
     repository.close();
   });
 
-  it('lists only the latest evaluation per strategy config', () => {
+  it('lists only the latest evaluation per active strategy config', () => {
     const repository = createRepository();
-    const strategy = repository.saveStrategyConfig('strategy-mr', 1, { name: 'MR', parameters: strategyParameters({ strategyKind: 'double7' }) });
-    repository.saveMeanReversionEvaluation(mrEvaluationInput(strategy.id, { id: 'eval-older', evaluatedAt: '2026-07-20T21:01:00.000Z', signal: 'FLAT' }));
-    const latest = repository.saveMeanReversionEvaluation(mrEvaluationInput(strategy.id, { id: 'eval-newer', evaluatedAt: '2026-07-21T21:01:00.000Z', signal: 'ENTER' }));
+    const strategy = repository.saveStrategyConfig('strategy-mr', 1, {
+      name: 'MR',
+      parameters: strategyParameters({ strategyKind: 'double7' }),
+    });
+    repository.activateStrategyVersion('strategy-mr', 1);
+    repository.saveMeanReversionEvaluation(
+      mrEvaluationInput(strategy.id, {
+        id: 'eval-older',
+        evaluatedAt: '2026-07-20T21:01:00.000Z',
+        signal: 'FLAT',
+      }),
+    );
+    const latest = repository.saveMeanReversionEvaluation(
+      mrEvaluationInput(strategy.id, {
+        id: 'eval-newer',
+        evaluatedAt: '2026-07-21T21:01:00.000Z',
+        signal: 'ENTER',
+      }),
+    );
 
     const results = repository.listLatestMeanReversionEvaluations();
     expect(results).toHaveLength(1);
@@ -289,11 +364,59 @@ describe('AnalysisRepository mean-reversion evaluations', () => {
     repository.close();
   });
 
+  it('excludes a strategy version archived by a newer active version, even though its own evaluation is still the latest for that config id', () => {
+    const repository = createRepository();
+    const strategyId = 'strategy-mr-versioned';
+    const v1 = repository.saveStrategyConfig(strategyId, 1, {
+      name: 'MR v1',
+      parameters: strategyParameters({ strategyKind: 'double7' }),
+    });
+    repository.activateStrategyVersion(strategyId, 1);
+    const staleEvaluation = repository.saveMeanReversionEvaluation(
+      mrEvaluationInput(v1.id, {
+        id: 'eval-v1',
+        evaluatedAt: '2026-07-20T21:01:00.000Z',
+        signal: 'HOLD',
+      }),
+    );
+
+    // v2 supersedes v1 (archiving it) — a real scenario when a strategy's live version changes.
+    const v2 = repository.saveStrategyConfig(
+      strategyId,
+      repository.getNextStrategyVersion(strategyId),
+      { name: 'MR v2', parameters: strategyParameters({ strategyKind: 'double7' }) },
+    );
+    repository.activateStrategyVersion(strategyId, v2.version);
+    const currentEvaluation = repository.saveMeanReversionEvaluation(
+      mrEvaluationInput(v2.id, {
+        id: 'eval-v2',
+        evaluatedAt: '2026-07-21T21:01:00.000Z',
+        signal: 'ENTER',
+      }),
+    );
+
+    const results = repository.listLatestMeanReversionEvaluations();
+    expect(results).toEqual([currentEvaluation]);
+    expect(results.map((r) => r.id)).not.toContain(staleEvaluation.id);
+    repository.close();
+  });
+
   it('round-trips a boolean aboveSmaFilter through the SQLite integer column', () => {
     const repository = createRepository();
-    const strategy = repository.saveStrategyConfig('strategy-mr', 1, { name: 'MR', parameters: strategyParameters({ strategyKind: 'double7' }) });
-    const above = repository.saveMeanReversionEvaluation(mrEvaluationInput(strategy.id, { id: 'eval-above', aboveSmaFilter: true }));
-    const below = repository.saveMeanReversionEvaluation(mrEvaluationInput(strategy.id, { id: 'eval-below', evaluatedAt: '2026-07-22T21:01:00.000Z', aboveSmaFilter: false }));
+    const strategy = repository.saveStrategyConfig('strategy-mr', 1, {
+      name: 'MR',
+      parameters: strategyParameters({ strategyKind: 'double7' }),
+    });
+    const above = repository.saveMeanReversionEvaluation(
+      mrEvaluationInput(strategy.id, { id: 'eval-above', aboveSmaFilter: true }),
+    );
+    const below = repository.saveMeanReversionEvaluation(
+      mrEvaluationInput(strategy.id, {
+        id: 'eval-below',
+        evaluatedAt: '2026-07-22T21:01:00.000Z',
+        aboveSmaFilter: false,
+      }),
+    );
 
     expect(above.aboveSmaFilter).toBe(true);
     expect(below.aboveSmaFilter).toBe(false);
