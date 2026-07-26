@@ -4,16 +4,18 @@ import { resolve } from 'node:path';
 
 import { ZodError } from 'zod';
 
-import { AnalysisRepository, defaultPersistencePath, type StoredAnalysisRun } from '../persistence/analysisRepository';
+import { AnalysisRepository, defaultPersistencePath, type StoredAnalysisRun, type StoredMeanReversionEvaluation } from '../persistence/analysisRepository';
+import { resolveStrategyParameters } from '../domain/strategyParameters';
 import { oandaConfigurationStatus, parseOandaConfiguration } from '../providers/oanda/config';
 import { OandaProvider, findNas100CandidatesFromInstruments } from '../providers/oanda/oandaProvider';
 import { StrategyConfigInputSchema, type StrategyStatus } from '../schemas/strategyConfig';
 import { runSyntheticFixtureAnalysis } from './fixtureRun';
 import { LiveH4Stream } from './liveH4Stream';
+import { evaluateStrategyConfigLive, resolveMrAccountSize } from './meanReversionRun';
 import { executeManualOandaAnalysis, runManualOandaAnalysis } from './oandaRun';
 import { executeScheduledOandaAnalysis } from './scheduledOandaRun';
 import { FixtureScheduler, type SchedulerRunResult, type SchedulerStatus } from './scheduler/fixtureScheduler';
-import { notifySchedulerOutcome } from './schedulerNotifications';
+import { notifyMeanReversionEvaluation, notifySchedulerOutcome } from './schedulerNotifications';
 import { parseSchedulerEnabled, parseSchedulerProvider } from './scheduler/torontoSchedule';
 import { BacktestRepository, defaultBacktestDatabasePath } from '../../scripts/backtest/backtestRepository';
 import { buildBacktestReport } from '../../scripts/backtest/backtestReport';
@@ -47,6 +49,12 @@ type LocalServiceOptions = {
   /** Test-only override for the scheduler's outcome notification, so tests never trigger a
    * real OS notification. Defaults to the real node-notifier-backed notifySchedulerOutcome. */
   notifySchedulerOutcome?: (result: SchedulerRunResult) => void;
+  /** Test-only override for the scheduler's mean-reversion evaluation notification (ENTER/EXIT
+   * only). Defaults to the real node-notifier-backed notifyMeanReversionEvaluation. */
+  notifyMeanReversionEvaluation?: (evaluation: StoredMeanReversionEvaluation) => void;
+  /** Test-only override for the MR risk-per-trade account size normally read from
+   * NAS100_MR_ACCOUNT_SIZE (see resolveMrAccountSize). */
+  mrAccountSize?: number | null;
   /** Test-only override for the A2 event-risk (Forex Factory) fetch, so tests never make a
    * real network call to that feed. Defaults to the global fetch. */
   eventRiskFetch?: typeof fetch;
@@ -135,6 +143,40 @@ const resolvePort = (value: string | undefined) => {
   return Number.isInteger(port) && port >= 1 && port <= 65535 ? port : DEFAULT_SERVICE_PORT;
 };
 
+/** Best-effort, after-the-fact evaluation of every ACTIVE rsi2/double7 strategy config, run on
+ * the same scheduler slots as the main pipeline (no new slots — see docs/MR_LIVE_INTEGRATION_PLAN.md).
+ * Independent of the main pipeline run: fetches its own completed daily/H4 candles (cached per
+ * timeframe so multiple MR strategies sharing a timeframe don't refetch), persists every
+ * evaluation, and returns them for the caller to notify on. Never touches
+ * safetyConstrainedState/the Patience Filter/minRewardRisk — this is a parallel, analysis-only
+ * surface with no order placement. */
+const evaluateActiveMeanReversionStrategies = async (
+  repository: AnalysisRepository,
+  provider: OandaProvider,
+  instrument: string,
+  accountSize: number | null,
+): Promise<StoredMeanReversionEvaluation[]> => {
+  const activeMrStrategies = repository
+    .listStrategies('active')
+    .filter((strategy) => {
+      const kind = resolveStrategyParameters(strategy.parameters).strategyKind;
+      return kind === 'rsi2' || kind === 'double7';
+    });
+  if (activeMrStrategies.length === 0) return [];
+
+  const candlesByTimeframe: { D?: Awaited<ReturnType<OandaProvider['getDailyCandles']>>['candles']; H4?: Awaited<ReturnType<OandaProvider['getH4Candles']>>['candles'] } = {};
+  const evaluations: StoredMeanReversionEvaluation[] = [];
+  for (const strategy of activeMrStrategies) {
+    const timeframe = resolveStrategyParameters(strategy.parameters).meanReversion.timeframe;
+    if (timeframe === 'D' && !candlesByTimeframe.D) candlesByTimeframe.D = (await provider.getDailyCandles(instrument, 250)).candles;
+    if (timeframe === 'H4' && !candlesByTimeframe.H4) candlesByTimeframe.H4 = (await provider.getH4Candles(instrument, 250)).candles;
+    const evaluation = evaluateStrategyConfigLive(strategy, instrument, candlesByTimeframe, { accountSize });
+    if (!evaluation) continue;
+    evaluations.push(repository.saveMeanReversionEvaluation({ id: randomUUID(), ...evaluation }));
+  }
+  return evaluations;
+};
+
 export function createLocalService(options: LocalServiceOptions = {}): LocalService {
   const databasePath = options.databasePath ?? process.env.NAS100_DASHBOARD_DB_PATH ?? defaultPersistencePath();
   const backtestDatabasePath = options.backtestDatabasePath ?? process.env.NAS100_BACKTEST_DB_PATH ?? defaultBacktestDatabasePath();
@@ -167,13 +209,34 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
     provider: schedulerProvider,
     run: async () => {
       if (!repository) throw new Error('Local persistence is unavailable.');
+      let result: SchedulerRunResult;
       if (schedulerProvider === 'oanda') {
-        if (!oandaProvider || !oandaConfiguration.nas100Instrument) return { outcome: 'failed', runKey: 'oanda:unconfigured', message: 'OANDA scheduler requires configured credentials and an explicit instrument.' };
-        const result = await executeScheduledOandaAnalysis(repository, oandaProvider, oandaConfiguration.nas100Instrument, { retryDelaysMs: options.scheduledOandaRetryDelaysMs, now: options.schedulerNow, eventRiskFetcher: options.eventRiskFetch });
-        return { outcome: result.outcome, runKey: result.run.runKey, message: result.message };
+        if (!oandaProvider || !oandaConfiguration.nas100Instrument) {
+          result = { outcome: 'failed', runKey: 'oanda:unconfigured', message: 'OANDA scheduler requires configured credentials and an explicit instrument.' };
+        } else {
+          const oandaResult = await executeScheduledOandaAnalysis(repository, oandaProvider, oandaConfiguration.nas100Instrument, { retryDelaysMs: options.scheduledOandaRetryDelaysMs, now: options.schedulerNow, eventRiskFetcher: options.eventRiskFetch });
+          result = { outcome: oandaResult.outcome, runKey: oandaResult.run.runKey, message: oandaResult.message };
+        }
+      } else {
+        const fixtureResult = runSyntheticFixtureAnalysis(repository, undefined, 'scheduler');
+        result = { outcome: fixtureResult.outcome, runKey: fixtureResult.run.runKey, message: fixtureResult.message };
       }
-      const result = runSyntheticFixtureAnalysis(repository, undefined, 'scheduler');
-      return { outcome: result.outcome, runKey: result.run.runKey, message: result.message };
+
+      // Independent of the branch above: MR evaluation only needs real OANDA candles, not
+      // whichever provider drives the main pipeline slot. Best-effort — a failure here must
+      // never turn an otherwise-successful scheduler slot into a 'failed' outcome.
+      if (oandaProvider && oandaConfiguration.nas100Instrument) {
+        try {
+          const accountSize = options.mrAccountSize ?? resolveMrAccountSize();
+          const evaluations = await evaluateActiveMeanReversionStrategies(repository, oandaProvider, oandaConfiguration.nas100Instrument, accountSize);
+          const notify = options.notifyMeanReversionEvaluation ?? notifyMeanReversionEvaluation;
+          for (const evaluation of evaluations) notify(evaluation);
+        } catch (cause) {
+          console.error('[mean-reversion] scheduler evaluation failed:', cause);
+        }
+      }
+
+      return result;
     },
   });
 
@@ -438,6 +501,23 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
           return;
         }
         json(response, 200, report);
+        return;
+      }
+
+      if (request.method === 'GET' && url.pathname === '/mr-evaluations') {
+        json(response, 200, { evaluations: activeRepository.listLatestMeanReversionEvaluations() });
+        return;
+      }
+
+      const mrEvaluationsMatch = request.method === 'GET' ? url.pathname.match(/^\/mr-evaluations\/([^/]+)$/) : null;
+      if (mrEvaluationsMatch) {
+        const [, strategyConfigId] = mrEvaluationsMatch;
+        const limit = parseLimit(url.searchParams.get('limit'));
+        if (limit === null) {
+          error(response, 400, 'INVALID_LIMIT', 'limit must be an integer between 1 and 100.');
+          return;
+        }
+        json(response, 200, { evaluations: activeRepository.listMeanReversionEvaluations(strategyConfigId!, limit) });
         return;
       }
 
