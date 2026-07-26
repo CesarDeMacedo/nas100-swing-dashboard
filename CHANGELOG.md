@@ -1,5 +1,39 @@
 # Changelog
 
+## Run D1 and H4 Mean-Reversion Simultaneously + UI Focus on Live Strategies
+
+- Double Seven H4 now runs live alongside D1, as its own independent strategy lineage
+  (separate `strategyId` — `activateStrategyVersion` only allows one active version per
+  strategy line, so two simultaneously-active strategies need two lines, not two versions of
+  one). Shared sizing re-derived from the actual combined portfolio: backtesting both at
+  protectiveStopAtrMultiple=2 and merging their trade-exit timelines gives a combined max
+  closed-trade drawdown of 8.72R (the two overlap heavily — same instrument/direction — so
+  combining isn't linearly additive, but does dig slightly deeper than either alone).
+  `NAS100_MR_RISK_PER_TRADE_PCT` lowered from 1.9% (D1-only) to **0.75%**, shared across both
+  strategies, to keep the desk's 8% internal target (10% hard cap, 5% daily) intact with both
+  running. See `docs/MR_LIVE_INTEGRATION_PLAN.md` for the full sizing derivation.
+- Fixed a real latent bug: `listLatestMeanReversionEvaluations` grouped by `strategy_config_id`
+  but never joined back to `strategy_configs.status` — its own docstring promised "current
+  signal per ACTIVE strategy" but an archived version's last evaluation (stale signal, stale
+  sizing under whatever risk% was in effect when it ran) kept surfacing in `/mr-evaluations`
+  forever once a strategy accumulated more than one version. Invisible with a single strategy
+  version in play; became visible once D1 picked up a second version during this session
+  (see incident note in the plan doc). Fixed with an added `INNER JOIN ... status = 'active'`,
+  with a regression test in `analysisRepository.test.ts`.
+- `MeanReversionStrategyCard` renders one card per active MR strategy (was: only the first);
+  `mapMeanReversionPriceLines` draws each active strategy's entry/stop with its own color pair
+  and a timeframe-labeled title (`MR entry (D1)`/`MR entry (H4)`) so two simultaneously-tracked
+  positions are never ambiguous on the shared H4 chart.
+- Removed the pipeline-only UI from the default dashboard view (`PrimaryActionBanner`,
+  `SetupSummary`, and the sidebar's `WhyNoEntryCard`/`SetupScoreCard`/`NextActionCard`/
+  `MarketContextCard`) — the pipeline strategy is dormant (near-zero signal rate over 8 years
+  of backtesting) and the strategies actually being traded are the mean-reversion ones. The
+  pipeline's own computation, tests, and components are untouched, just unmounted from the
+  live view; several `App.test.tsx` assertions that used the removed banner's label as a
+  convenience proxy for "did the right data reach the screen" were updated to check an
+  equivalent surviving signal, or removed where the safety property they protected turned out
+  to already be independently covered at the domain level.
+
 ## Mean-Reversion Strategy Kinds (Connors RSI-2 and Double Seven)
 
 - Added `strategyKind: 'pipeline' | 'rsi2' | 'double7'` to strategy parameters (Zod-defaulted to `'pipeline'`; every pre-existing config is unchanged). The two new kinds are Connors-style long-only condition-exit mean-reversion engines — the family with the strongest published evidence on equity indices — implemented as a pure domain module (`src/domain/meanReversionStrategy.ts`: Wilder RSI/ATR, SMA filter, zero-lookahead walker, optional ATR protective stop, unit-tested including a no-lookahead invariant).
