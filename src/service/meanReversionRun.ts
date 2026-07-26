@@ -90,7 +90,11 @@ export function evaluateMeanReversionSignal(
 
   if (isOpen) {
     signal = lastTrade!.entryTime === lastCandle.time ? 'ENTER' : 'HOLD';
-    if (params.protectiveStopAtrMultiple !== null && lastTrade!.atrAtEntry !== null && lastTrade!.atrAtEntry > 0) {
+    if (
+      params.protectiveStopAtrMultiple !== null &&
+      lastTrade!.atrAtEntry !== null &&
+      lastTrade!.atrAtEntry > 0
+    ) {
       stopDistance = params.protectiveStopAtrMultiple * lastTrade!.atrAtEntry;
       stopPrice = lastTrade!.entryPrice - stopDistance;
     }
@@ -127,11 +131,14 @@ export function evaluateMeanReversionSignal(
   };
 }
 
-const isMeanReversionKind = (kind: StrategyKind): kind is 'rsi2' | 'double7' => kind === 'rsi2' || kind === 'double7';
+const isMeanReversionKind = (kind: StrategyKind): kind is 'rsi2' | 'double7' =>
+  kind === 'rsi2' || kind === 'double7';
 
 /** Completed-only candle mapping shared with the backtest CLI's convention (scripts/backtest/
  * runMeanReversionBacktest.ts) — never evaluate on an open bar. */
-export const completedMeanReversionCandles = (candles: readonly OandaCandle[]): MeanReversionCandle[] =>
+export const completedMeanReversionCandles = (
+  candles: readonly OandaCandle[],
+): MeanReversionCandle[] =>
   candles
     .filter((candle) => candle.isClosed)
     .map(({ time, open, high, low, close }) => ({ time, open, high, low, close }));
@@ -143,6 +150,19 @@ export const resolveMrAccountSize = (env: NodeJS.ProcessEnv = process.env): numb
   if (raw === undefined) return null;
   const parsed = Number(raw);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+};
+
+/** Reads the optional risk-per-trade env var (`NAS100_MR_RISK_PER_TRADE_PCT`, in percent, e.g.
+ * "1.9"). Absent/invalid falls back to DEFAULT_MR_RISK_PER_TRADE_PCT. Account-level like the
+ * account size — sizing is a property of the desk's drawdown rules, not of a strategy config.
+ * Capped at 5 as a sanity bound: no drawdown rule this app has been sized for supports more. */
+export const resolveMrRiskPerTradePct = (env: NodeJS.ProcessEnv = process.env): number => {
+  const raw = env.NAS100_MR_RISK_PER_TRADE_PCT;
+  if (raw === undefined) return DEFAULT_MR_RISK_PER_TRADE_PCT;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 && parsed <= 5
+    ? parsed
+    : DEFAULT_MR_RISK_PER_TRADE_PCT;
 };
 
 /** Top-level entry point for the scheduler hook: resolves an active strategy config's engine
@@ -158,7 +178,10 @@ export function evaluateStrategyConfigLive(
   const resolved = resolveStrategyParameters(strategy.parameters);
   if (!isMeanReversionKind(resolved.strategyKind)) return null;
 
-  const params: MeanReversionParameters = { kind: resolved.strategyKind, ...resolved.meanReversion };
+  const params: MeanReversionParameters = {
+    kind: resolved.strategyKind,
+    ...resolved.meanReversion,
+  };
   const source = candlesByTimeframe[params.timeframe];
   if (!source) return null;
   const candles = completedMeanReversionCandles(source);

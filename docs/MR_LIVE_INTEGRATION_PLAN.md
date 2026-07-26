@@ -8,8 +8,12 @@ of 2026-07-26); the implementing session should execute, not re-litigate them. C
 
 - Core: **Double Seven, daily bars, long-only, protective stop 2×ATR(14)** on NAS100.
   Backtested (no costs): 98 trades, 69% win, PF(R) 1.72, +21.5R, max closed-trade DD 3.1R.
-- Prop-desk constraint: account max DD 4% (hard), internal target 3%.
-  **Risk per trade: 0.73%** of account (= 3% / (3.1R DD + 1R floating buffer)).
+- Prop-desk constraint (UPDATED 2026-07-26, after the user confirmed the desk's actual rules:
+  5% max daily loss, 10% max total DD): internal target 8% of the 10% hard cap.
+  **Risk per trade: 1.9%** of account (= 8% / (3.1R DD + 1R floating buffer)), configured via
+  `NAS100_MR_RISK_PER_TRADE_PCT` (account-level env var; code default remains the conservative
+  0.73% from the original 4%-cap sizing). Daily-loss check: worst realistic day is a gap
+  through the stop (~1.5R) ≈ 2.9% < 5%.
 - The H4 variant (PF 1.26–1.32, DD 7.3R) is displayed for information if cheap to include,
   but is NOT the recommended live strategy; under a shared DD budget it adds ~nothing.
 - No-stop variants are for research only — never suggest them for the prop account.

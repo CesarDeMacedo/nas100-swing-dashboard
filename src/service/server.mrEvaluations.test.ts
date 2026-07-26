@@ -91,6 +91,25 @@ const providerFor = (candles: OandaCandle[]): OandaProvider =>
     }),
   }) as unknown as OandaProvider;
 
+describe('risk-per-trade resolution', () => {
+  it('reads NAS100_MR_RISK_PER_TRADE_PCT and falls back to the default when absent or invalid', async () => {
+    const { resolveMrRiskPerTradePct, DEFAULT_MR_RISK_PER_TRADE_PCT } =
+      await import('./meanReversionRun');
+
+    expect(
+      resolveMrRiskPerTradePct({ NAS100_MR_RISK_PER_TRADE_PCT: '1.9' } as NodeJS.ProcessEnv),
+    ).toBe(1.9);
+    expect(resolveMrRiskPerTradePct({} as NodeJS.ProcessEnv)).toBe(DEFAULT_MR_RISK_PER_TRADE_PCT);
+    expect(
+      resolveMrRiskPerTradePct({ NAS100_MR_RISK_PER_TRADE_PCT: '-1' } as NodeJS.ProcessEnv),
+    ).toBe(DEFAULT_MR_RISK_PER_TRADE_PCT);
+    // Above the 5% sanity cap: no drawdown rule this app has been sized for supports more.
+    expect(
+      resolveMrRiskPerTradePct({ NAS100_MR_RISK_PER_TRADE_PCT: '12' } as NodeJS.ProcessEnv),
+    ).toBe(DEFAULT_MR_RISK_PER_TRADE_PCT);
+  });
+});
+
 describe('scheduler mean-reversion evaluation dedup', () => {
   it('evaluates a completed bar exactly once across consecutive scheduler slots', async () => {
     const repository = createRepository();

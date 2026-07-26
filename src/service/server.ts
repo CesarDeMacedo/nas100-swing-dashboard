@@ -19,7 +19,11 @@ import {
 import { StrategyConfigInputSchema, type StrategyStatus } from '../schemas/strategyConfig';
 import { runSyntheticFixtureAnalysis } from './fixtureRun';
 import { LiveH4Stream } from './liveH4Stream';
-import { evaluateStrategyConfigLive, resolveMrAccountSize } from './meanReversionRun';
+import {
+  evaluateStrategyConfigLive,
+  resolveMrAccountSize,
+  resolveMrRiskPerTradePct,
+} from './meanReversionRun';
 import { executeManualOandaAnalysis, runManualOandaAnalysis } from './oandaRun';
 import { executeScheduledOandaAnalysis } from './scheduledOandaRun';
 import {
@@ -70,6 +74,9 @@ type LocalServiceOptions = {
   /** Test-only override for the MR risk-per-trade account size normally read from
    * NAS100_MR_ACCOUNT_SIZE (see resolveMrAccountSize). */
   mrAccountSize?: number | null;
+  /** Test-only override for the MR risk-per-trade percentage normally read from
+   * NAS100_MR_RISK_PER_TRADE_PCT (see resolveMrRiskPerTradePct). */
+  mrRiskPerTradePct?: number;
   /** Test-only override for the A2 event-risk (Forex Factory) fetch, so tests never make a
    * real network call to that feed. Defaults to the global fetch. */
   eventRiskFetch?: typeof fetch;
@@ -191,6 +198,7 @@ export const evaluateActiveMeanReversionStrategies = async (
   provider: OandaProvider,
   instrument: string,
   accountSize: number | null,
+  riskPerTradePct?: number,
 ): Promise<StoredMeanReversionEvaluation[]> => {
   const activeMrStrategies = repository.listStrategies('active').filter((strategy) => {
     const kind = resolveStrategyParameters(strategy.parameters).strategyKind;
@@ -214,6 +222,7 @@ export const evaluateActiveMeanReversionStrategies = async (
       candlesByTimeframe.H4 = (await provider.getH4Candles(instrument, 500)).candles;
     const evaluation = evaluateStrategyConfigLive(strategy, instrument, candlesByTimeframe, {
       accountSize,
+      riskPerTradePct,
     });
     if (!evaluation) continue;
     const latest = repository.listMeanReversionEvaluations(strategy.id, 1)[0];
@@ -312,11 +321,13 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
       if (oandaProvider && oandaConfiguration.nas100Instrument) {
         try {
           const accountSize = options.mrAccountSize ?? resolveMrAccountSize();
+          const riskPerTradePct = options.mrRiskPerTradePct ?? resolveMrRiskPerTradePct();
           const evaluations = await evaluateActiveMeanReversionStrategies(
             repository,
             oandaProvider,
             oandaConfiguration.nas100Instrument,
             accountSize,
+            riskPerTradePct,
           );
           const notify = options.notifyMeanReversionEvaluation ?? notifyMeanReversionEvaluation;
           for (const evaluation of evaluations) notify(evaluation);

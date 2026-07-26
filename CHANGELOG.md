@@ -7,6 +7,13 @@
 - New CLI runner `scripts/backtest/runMeanReversionBacktest.ts` (single-pass over cached D or H4 candles; indicators always warm up on pre-range history) persisting to a new `backtest_mr_trades` table in the harness SQLite (separate from `backtest_signals`, whose NOT NULL stop/target columns encode pipeline geometry).
 - First results on NAS100 (full cached history, no cost model, entry/exit at bar close): RSI-2 daily 32 trades / 81% win / PF 2.36; Double Seven daily 80 trades / 76% win / PF 2.54 — both in line with the published QQQ/SPY numbers. The H4 transfer test degrades materially (RSI-2 H4: PF 1.12; Double Seven H4: PF 1.64 with thin +0.21%/trade), consistent with the literature being a daily-bar phenomenon.
 
+## Configurable MR Risk Per Trade (Desk Rules Update)
+
+- Added `NAS100_MR_RISK_PER_TRADE_PCT` (account-level env var, sanity-capped at 5) feeding the
+  live MR evaluator's position sizing; code default stays the conservative 0.73%. Sized for the
+  desk's confirmed rules (5% daily / 10% total DD): 1.9% per trade keeps the projected worst
+  case at ~7.9% total and ~2.9% on a gap day — see docs/MR_LIVE_INTEGRATION_PLAN.md.
+
 ## Coherent Invalidation Anchor + All-Frames Gate Funnel Diagnostics
 
 - Added `invalidationAnchor: 'deepest' | 'traded_zone'` to strategy parameters (`src/domain/strategyParameters.ts`, Zod-defaulted to `'deepest'` in `src/schemas/strategyConfig.ts` so pre-existing persisted configs keep parsing and keep their exact historical behavior). `'traded_zone'` anchors invalidation/stop to the zone the entry is actually taken against (the same `nearZone` that defines entry location and the confirmation boundary), falling back to the recent swing on EMA-anchored entries — instead of the deepest of all candidate levels. Motivation: the deepest-candidate anchor measures risk to the farthest structure while `targets[0]` measures reward to the nearest one, systematically depressing planned R:R below the non-negotiable 2.0 floor.
