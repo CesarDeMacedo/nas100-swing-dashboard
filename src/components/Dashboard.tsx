@@ -12,7 +12,8 @@ import { SetupSummary } from './SetupSummary';
 import { AnalysisHistoryPanel } from './AnalysisHistoryPanel';
 import { StrategyManagerPanel } from './StrategyManagerPanel';
 import { BacktestResultsPanel } from './BacktestResultsPanel';
-import type { BacktestListResult, BacktestReportResult, HistoryResult, RunDetailResult, SavedOandaDisplaySnapshot, StrategyDetailResult, StrategyListResult, StrategyMutationResult, StrategyParameters } from '../serviceClient/localAnalysisService';
+import { MeanReversionPanel } from './MeanReversionPanel';
+import type { BacktestListResult, BacktestReportResult, HistoryResult, MrEvaluationsListResult, RunDetailResult, SavedOandaDisplaySnapshot, StrategyDetailResult, StrategyListResult, StrategyMutationResult, StrategyParameters } from '../serviceClient/localAnalysisService';
 
 // Lazy-loaded so the ~500kB lightweight-charts dependency is not part of the initial bundle.
 const CandlestickChartPanel = lazy(() => import('./chart/CandlestickChartPanel').then((module) => ({ default: module.CandlestickChartPanel })));
@@ -68,9 +69,14 @@ type DashboardProps = {
   onCloseBacktests?: () => void;
   onRefreshBacktests?: () => void;
   onSelectBacktest?: (runId: string) => void;
+  mrEvaluationsOpen?: boolean;
+  mrEvaluationsList?: MrEvaluationsListResult | { kind: 'loading' } | null;
+  onOpenMrEvaluations?: () => void;
+  onCloseMrEvaluations?: () => void;
+  onRefreshMrEvaluations?: () => void;
 };
 
-export function Dashboard({ analysis, candleResult, dashboardState, serviceAvailability, manualRunState, manualRunResult, onManualRun, historyOpen = false, history, historyDetail, selectedHistoryRunKey = null, onOpenHistory, onCloseHistory, onRefreshHistory, historyLimit, onChangeHistoryLimit, onSelectHistoryRun, onViewHistoryInDashboard, savedOandaProvenance, savedSourceCandleTime, onReturnToMock, liveObservationStatus, liveObservationPrice, onOpenOandaPreview, savedMetadata, oandaStatus, oandaManualRunState, oandaManualRunResult, onRunOandaNow, strategiesOpen = false, strategyList, strategyDetail, selectedStrategyId = null, strategyCreateState = 'idle', strategyCreateResult = null, onOpenStrategies, onCloseStrategies, onRefreshStrategies, onSelectStrategy, onCreateStrategy, onCreateStrategyVersion, onActivateStrategyVersion, backtestsOpen = false, backtestList, backtestDetail, selectedBacktestId = null, onOpenBacktests, onCloseBacktests, onRefreshBacktests, onSelectBacktest }: DashboardProps) {
+export function Dashboard({ analysis, candleResult, dashboardState, serviceAvailability, manualRunState, manualRunResult, onManualRun, historyOpen = false, history, historyDetail, selectedHistoryRunKey = null, onOpenHistory, onCloseHistory, onRefreshHistory, historyLimit, onChangeHistoryLimit, onSelectHistoryRun, onViewHistoryInDashboard, savedOandaProvenance, savedSourceCandleTime, onReturnToMock, liveObservationStatus, liveObservationPrice, onOpenOandaPreview, savedMetadata, oandaStatus, oandaManualRunState, oandaManualRunResult, onRunOandaNow, strategiesOpen = false, strategyList, strategyDetail, selectedStrategyId = null, strategyCreateState = 'idle', strategyCreateResult = null, onOpenStrategies, onCloseStrategies, onRefreshStrategies, onSelectStrategy, onCreateStrategy, onCreateStrategyVersion, onActivateStrategyVersion, backtestsOpen = false, backtestList, backtestDetail, selectedBacktestId = null, onOpenBacktests, onCloseBacktests, onRefreshBacktests, onSelectBacktest, mrEvaluationsOpen = false, mrEvaluationsList, onOpenMrEvaluations, onCloseMrEvaluations, onRefreshMrEvaluations }: DashboardProps) {
   const state = dashboardState;
 
   return (
@@ -87,6 +93,7 @@ export function Dashboard({ analysis, candleResult, dashboardState, serviceAvail
           onOpenHistory={onOpenHistory}
           onOpenStrategies={onOpenStrategies}
           onOpenBacktests={onOpenBacktests}
+          onOpenMrEvaluations={onOpenMrEvaluations}
           savedOandaProvenance={savedOandaProvenance}
           savedSourceCandleTime={savedSourceCandleTime}
           onReturnToMock={onReturnToMock}
@@ -145,6 +152,9 @@ export function Dashboard({ analysis, candleResult, dashboardState, serviceAvail
       ) : null}
       {onCloseBacktests && onRefreshBacktests && onSelectBacktest ? (
         <BacktestResultsPanel open={backtestsOpen} list={backtestList ?? null} detail={backtestDetail ?? null} selectedRunId={selectedBacktestId} onClose={onCloseBacktests} onRefresh={onRefreshBacktests} onSelect={onSelectBacktest} />
+      ) : null}
+      {onCloseMrEvaluations && onRefreshMrEvaluations ? (
+        <MeanReversionPanel open={mrEvaluationsOpen} list={mrEvaluationsList ?? null} onClose={onCloseMrEvaluations} onRefresh={onRefreshMrEvaluations} />
       ) : null}
     </div>
   );

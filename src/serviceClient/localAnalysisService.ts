@@ -120,6 +120,7 @@ export type LocalAnalysisServiceClient = {
   ) => Promise<StrategyMutationResult>;
   listBacktests?: (strategyConfigId?: string) => Promise<BacktestListResult>;
   getBacktest?: (id: string) => Promise<BacktestReportResult>;
+  listMrEvaluations?: () => Promise<MrEvaluationsListResult>;
 };
 
 export type OandaPreviewCandle = {
@@ -274,6 +275,35 @@ export type BacktestReportResult =
   | { kind: 'failed'; message: string }
   | { kind: 'malformed_response'; message: string };
 
+export type MeanReversionSignal = 'ENTER' | 'HOLD' | 'EXIT' | 'FLAT';
+
+export type MeanReversionEvaluation = {
+  id: string;
+  strategyConfigId: string;
+  strategyId: string;
+  version: number;
+  instrument: string;
+  timeframe: 'D' | 'H4';
+  evaluatedAt: string;
+  referenceCandleTime: string;
+  referenceClose: number;
+  signal: MeanReversionSignal;
+  stopPrice: number | null;
+  atr: number | null;
+  smaFilterValue: number | null;
+  aboveSmaFilter: boolean | null;
+  riskPerTradePct: number;
+  accountSize: number | null;
+  suggestedRiskAmount: number | null;
+  suggestedPositionSizeUnits: number | null;
+  persistedAt: string;
+};
+
+export type MrEvaluationsListResult =
+  | { kind: 'succeeded'; evaluations: MeanReversionEvaluation[] }
+  | { kind: 'failed'; message: string }
+  | { kind: 'malformed_response'; message: string };
+
 const serviceUrl = () =>
   (import.meta.env.VITE_NAS100_SERVICE_URL || DEFAULT_LOCAL_ANALYSIS_SERVICE_URL).replace(
     /\/$/,
@@ -406,6 +436,19 @@ const isBacktestReport = (value: unknown): value is BacktestReport => {
     Array.isArray(report.breakdownByHour) &&
     Array.isArray(report.breakdownByWeekday) &&
     Array.isArray(report.signals)
+  );
+};
+
+const isMeanReversionEvaluation = (value: unknown): value is MeanReversionEvaluation => {
+  if (!value || typeof value !== 'object') return false;
+  const evaluation = value as Record<string, unknown>;
+  return (
+    typeof evaluation.id === 'string' &&
+    typeof evaluation.strategyConfigId === 'string' &&
+    typeof evaluation.instrument === 'string' &&
+    (evaluation.timeframe === 'D' || evaluation.timeframe === 'H4') &&
+    (evaluation.signal === 'ENTER' || evaluation.signal === 'HOLD' || evaluation.signal === 'EXIT' || evaluation.signal === 'FLAT') &&
+    typeof evaluation.referenceClose === 'number'
   );
 };
 
@@ -878,6 +921,31 @@ export function createLocalAnalysisServiceClient(
         return {
           kind: 'failed',
           message: 'Start the local analysis service to view backtest results.',
+        };
+      }
+    },
+    async listMrEvaluations() {
+      try {
+        const response = await request('/mr-evaluations');
+        const payload = await responseJson(response);
+        if (!response.ok)
+          return {
+            kind: 'failed',
+            message: serviceErrorMessage(payload, 'Could not load mean-reversion evaluations.'),
+          };
+        if (
+          !payload ||
+          typeof payload !== 'object' ||
+          !('evaluations' in payload) ||
+          !Array.isArray(payload.evaluations) ||
+          !payload.evaluations.every(isMeanReversionEvaluation)
+        )
+          return invalidResponse('Local service returned an invalid mean-reversion evaluations response.');
+        return { kind: 'succeeded', evaluations: payload.evaluations };
+      } catch {
+        return {
+          kind: 'failed',
+          message: 'Start the local analysis service to view mean-reversion evaluations.',
         };
       }
     },

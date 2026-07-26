@@ -9,7 +9,7 @@ import { parseCandleDataset } from './domain/candles';
 import { buildDashboardState } from './application/buildDashboardState';
 import { currentCandleDatasetSource } from './domain/fixtures';
 import { useDashboardStore } from './store/dashboardStore';
-import { localAnalysisService, type BacktestListResult, type BacktestReportResult, type HistoryResult, type LocalAnalysisServiceClient, type ManualRunResult, type OandaPreviewCandle, type OandaPreviewData, type OandaPreviewResult, type OandaProviderStatus, type RunDetailResult, type SavedOandaDisplaySnapshot, type ServiceAvailability, type StrategyDetailResult, type StrategyListResult, type StrategyMutationResult, type StrategyParameters } from './serviceClient/localAnalysisService';
+import { localAnalysisService, type BacktestListResult, type BacktestReportResult, type HistoryResult, type LocalAnalysisServiceClient, type ManualRunResult, type MrEvaluationsListResult, type OandaPreviewCandle, type OandaPreviewData, type OandaPreviewResult, type OandaProviderStatus, type RunDetailResult, type SavedOandaDisplaySnapshot, type ServiceAvailability, type StrategyDetailResult, type StrategyListResult, type StrategyMutationResult, type StrategyParameters } from './serviceClient/localAnalysisService';
 
 const candleTime = (candle: unknown): string | null => {
   if (!candle || typeof candle !== 'object') return null;
@@ -82,6 +82,8 @@ export default function App({
   const [backtestList, setBacktestList] = useState<BacktestListResult | { kind: 'loading' } | null>(null);
   const [backtestDetail, setBacktestDetail] = useState<BacktestReportResult | { kind: 'loading' } | null>(null);
   const [selectedBacktestId, setSelectedBacktestId] = useState<string | null>(null);
+  const [mrEvaluationsOpen, setMrEvaluationsOpen] = useState(false);
+  const [mrEvaluationsList, setMrEvaluationsList] = useState<MrEvaluationsListResult | { kind: 'loading' } | null>(null);
   const savedAnalysisResult = useMemo(() => savedOandaSnapshot ? parseAnalysis(savedOandaSnapshot.analysis) : null, [savedOandaSnapshot]);
   const savedCandleResult = useMemo(() => savedOandaSnapshot ? parseCandleDataset({ schemaVersion: '1.0.0', datasetId: `saved-oanda:${savedOandaSnapshot.instrument}:${savedOandaSnapshot.h4SourceCandleTime ?? 'unavailable'}`, description: 'Saved immutable OANDA H4 analysis snapshot.', isSynthetic: false, timezone: 'America/Toronto', instrument: savedOandaSnapshot.instrument, timeframe: 'H4', candles: mergeCandleSeries(savedOandaSnapshot.candles as unknown[], gapCandles, liveOpenCandle) }) : null, [savedOandaSnapshot, gapCandles, liveOpenCandle]);
   const activeAnalysis = savedOandaSnapshot ? (savedAnalysisResult?.success ? savedAnalysisResult.analysis : null) : dashboardAnalysis;
@@ -306,6 +308,17 @@ export default function App({
     setBacktestDetail(await serviceClient.getBacktest(runId));
   };
 
+  const loadMrEvaluations = async () => {
+    if (!serviceClient.listMrEvaluations) return;
+    setMrEvaluationsList({ kind: 'loading' });
+    setMrEvaluationsList(await serviceClient.listMrEvaluations());
+  };
+
+  const openMrEvaluations = () => {
+    setMrEvaluationsOpen(true);
+    void loadMrEvaluations();
+  };
+
   const loadOandaPreview = async () => {
     if (!serviceClient.getOandaCandles) return;
     setOandaPreviewLoading(true); setOandaPreviewError(null);
@@ -378,6 +391,11 @@ export default function App({
           onCloseBacktests={() => setBacktestsOpen(false)}
           onRefreshBacktests={() => void loadBacktests()}
           onSelectBacktest={(runId) => void selectBacktest(runId)}
+          mrEvaluationsOpen={mrEvaluationsOpen}
+          mrEvaluationsList={mrEvaluationsList}
+          onOpenMrEvaluations={openMrEvaluations}
+          onCloseMrEvaluations={() => setMrEvaluationsOpen(false)}
+          onRefreshMrEvaluations={() => void loadMrEvaluations()}
         />
       ) : null}
     </AppShell>
