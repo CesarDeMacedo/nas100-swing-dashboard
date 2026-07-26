@@ -4,20 +4,35 @@ import { resolve } from 'node:path';
 
 import { ZodError } from 'zod';
 
-import { AnalysisRepository, defaultPersistencePath, type StoredAnalysisRun, type StoredMeanReversionEvaluation } from '../persistence/analysisRepository';
+import {
+  AnalysisRepository,
+  defaultPersistencePath,
+  type StoredAnalysisRun,
+  type StoredMeanReversionEvaluation,
+} from '../persistence/analysisRepository';
 import { resolveStrategyParameters } from '../domain/strategyParameters';
 import { oandaConfigurationStatus, parseOandaConfiguration } from '../providers/oanda/config';
-import { OandaProvider, findNas100CandidatesFromInstruments } from '../providers/oanda/oandaProvider';
+import {
+  OandaProvider,
+  findNas100CandidatesFromInstruments,
+} from '../providers/oanda/oandaProvider';
 import { StrategyConfigInputSchema, type StrategyStatus } from '../schemas/strategyConfig';
 import { runSyntheticFixtureAnalysis } from './fixtureRun';
 import { LiveH4Stream } from './liveH4Stream';
 import { evaluateStrategyConfigLive, resolveMrAccountSize } from './meanReversionRun';
 import { executeManualOandaAnalysis, runManualOandaAnalysis } from './oandaRun';
 import { executeScheduledOandaAnalysis } from './scheduledOandaRun';
-import { FixtureScheduler, type SchedulerRunResult, type SchedulerStatus } from './scheduler/fixtureScheduler';
+import {
+  FixtureScheduler,
+  type SchedulerRunResult,
+  type SchedulerStatus,
+} from './scheduler/fixtureScheduler';
 import { notifyMeanReversionEvaluation, notifySchedulerOutcome } from './schedulerNotifications';
 import { parseSchedulerEnabled, parseSchedulerProvider } from './scheduler/torontoSchedule';
-import { BacktestRepository, defaultBacktestDatabasePath } from '../../scripts/backtest/backtestRepository';
+import {
+  BacktestRepository,
+  defaultBacktestDatabasePath,
+} from '../../scripts/backtest/backtestRepository';
 import { buildBacktestReport } from '../../scripts/backtest/backtestReport';
 
 export const LOCAL_SERVICE_HOST = '127.0.0.1';
@@ -96,10 +111,20 @@ const error = (response: ServerResponse, statusCode: number, code: string, messa
  * the same spirit as `report_json` already embedding everything a report view needs. A run
  * with no `strategyConfigId` (the default-parameters case) or one whose strategy has since
  * been deleted just omits the fields. */
-const withStrategyLabel = <T extends { run: StoredAnalysisRun }>(repository: AnalysisRepository, item: T) => {
+const withStrategyLabel = <T extends { run: StoredAnalysisRun }>(
+  repository: AnalysisRepository,
+  item: T,
+) => {
   const strategyConfigId = item.run.strategyConfigId;
   const strategy = strategyConfigId ? repository.getStrategyConfigById(strategyConfigId) : null;
-  return { ...item, run: { ...item.run, strategyName: strategy?.name ?? null, strategyVersion: strategy?.version ?? null } };
+  return {
+    ...item,
+    run: {
+      ...item.run,
+      strategyName: strategy?.name ?? null,
+      strategyVersion: strategy?.version ?? null,
+    },
+  };
 };
 
 const readJsonBody = async (request: IncomingMessage): Promise<unknown> => {
@@ -110,7 +135,11 @@ const readJsonBody = async (request: IncomingMessage): Promise<unknown> => {
   return JSON.parse(raw);
 };
 
-const summary = (run: StoredAnalysisRun, report: NonNullable<ReturnType<typeof runSyntheticFixtureAnalysis>['report']>, alreadyExists: boolean) => ({
+const summary = (
+  run: StoredAnalysisRun,
+  report: NonNullable<ReturnType<typeof runSyntheticFixtureAnalysis>['report']>,
+  alreadyExists: boolean,
+) => ({
   id: run.id,
   runKey: run.runKey,
   action: report.action,
@@ -149,54 +178,88 @@ const resolvePort = (value: string | undefined) => {
  * timeframe so multiple MR strategies sharing a timeframe don't refetch), persists every
  * evaluation, and returns them for the caller to notify on. Never touches
  * safetyConstrainedState/the Patience Filter/minRewardRisk — this is a parallel, analysis-only
- * surface with no order placement. */
-const evaluateActiveMeanReversionStrategies = async (
+ * surface with no order placement.
+ *
+ * Deduplicated per completed bar: a daily reference bar stays the latest completed bar across
+ * up to six consecutive scheduler slots, so without this check the same ENTER/EXIT would be
+ * re-persisted and re-notified on every slot until the next daily close. If the latest stored
+ * evaluation for a config already covers the same referenceCandleTime, the config is skipped —
+ * nothing new happened, so nothing is persisted and (because only returned evaluations are
+ * notified) no repeat OS notification fires. */
+export const evaluateActiveMeanReversionStrategies = async (
   repository: AnalysisRepository,
   provider: OandaProvider,
   instrument: string,
   accountSize: number | null,
 ): Promise<StoredMeanReversionEvaluation[]> => {
-  const activeMrStrategies = repository
-    .listStrategies('active')
-    .filter((strategy) => {
-      const kind = resolveStrategyParameters(strategy.parameters).strategyKind;
-      return kind === 'rsi2' || kind === 'double7';
-    });
+  const activeMrStrategies = repository.listStrategies('active').filter((strategy) => {
+    const kind = resolveStrategyParameters(strategy.parameters).strategyKind;
+    return kind === 'rsi2' || kind === 'double7';
+  });
   if (activeMrStrategies.length === 0) return [];
 
-  const candlesByTimeframe: { D?: Awaited<ReturnType<OandaProvider['getDailyCandles']>>['candles']; H4?: Awaited<ReturnType<OandaProvider['getH4Candles']>>['candles'] } = {};
+  const candlesByTimeframe: {
+    D?: Awaited<ReturnType<OandaProvider['getDailyCandles']>>['candles'];
+    H4?: Awaited<ReturnType<OandaProvider['getH4Candles']>>['candles'];
+  } = {};
   const evaluations: StoredMeanReversionEvaluation[] = [];
   for (const strategy of activeMrStrategies) {
     const timeframe = resolveStrategyParameters(strategy.parameters).meanReversion.timeframe;
-    if (timeframe === 'D' && !candlesByTimeframe.D) candlesByTimeframe.D = (await provider.getDailyCandles(instrument, 250)).candles;
-    if (timeframe === 'H4' && !candlesByTimeframe.H4) candlesByTimeframe.H4 = (await provider.getH4Candles(instrument, 250)).candles;
-    const evaluation = evaluateStrategyConfigLive(strategy, instrument, candlesByTimeframe, { accountSize });
+    // 500, not the SMA-filter minimum of ~200+1: the signal is derived by replaying the engine
+    // over this window, and the replay must include any still-open position's entry bar. With a
+    // 200-bar warmup, 500 bars leave ~300 replayable bars against a backtested worst hold of 24.
+    if (timeframe === 'D' && !candlesByTimeframe.D)
+      candlesByTimeframe.D = (await provider.getDailyCandles(instrument, 500)).candles;
+    if (timeframe === 'H4' && !candlesByTimeframe.H4)
+      candlesByTimeframe.H4 = (await provider.getH4Candles(instrument, 500)).candles;
+    const evaluation = evaluateStrategyConfigLive(strategy, instrument, candlesByTimeframe, {
+      accountSize,
+    });
     if (!evaluation) continue;
+    const latest = repository.listMeanReversionEvaluations(strategy.id, 1)[0];
+    if (latest && latest.referenceCandleTime === evaluation.referenceCandleTime) continue;
     evaluations.push(repository.saveMeanReversionEvaluation({ id: randomUUID(), ...evaluation }));
   }
   return evaluations;
 };
 
 export function createLocalService(options: LocalServiceOptions = {}): LocalService {
-  const databasePath = options.databasePath ?? process.env.NAS100_DASHBOARD_DB_PATH ?? defaultPersistencePath();
-  const backtestDatabasePath = options.backtestDatabasePath ?? process.env.NAS100_BACKTEST_DB_PATH ?? defaultBacktestDatabasePath();
+  const databasePath =
+    options.databasePath ?? process.env.NAS100_DASHBOARD_DB_PATH ?? defaultPersistencePath();
+  const backtestDatabasePath =
+    options.backtestDatabasePath ??
+    process.env.NAS100_BACKTEST_DB_PATH ??
+    defaultBacktestDatabasePath();
   const configuredPort = options.port ?? resolvePort(process.env.NAS100_DASHBOARD_PORT);
-  const schedulerEnabled = options.schedulerEnabled ?? parseSchedulerEnabled(process.env.NAS100_DASHBOARD_SCHEDULER_ENABLED);
-  const schedulerProvider = options.schedulerProvider ?? parseSchedulerProvider(process.env.NAS100_DASHBOARD_SCHEDULER_PROVIDER);
+  const schedulerEnabled =
+    options.schedulerEnabled ??
+    parseSchedulerEnabled(process.env.NAS100_DASHBOARD_SCHEDULER_ENABLED);
+  const schedulerProvider =
+    options.schedulerProvider ??
+    parseSchedulerProvider(process.env.NAS100_DASHBOARD_SCHEDULER_PROVIDER);
   const oandaConfiguration = parseOandaConfiguration(options.oandaEnvironment);
-  const oandaProvider = oandaConfiguration.state === 'configured' ? new OandaProvider(oandaConfiguration, options.oandaFetch) : null;
-  const configuredOanda = oandaConfiguration.state === 'configured' && oandaConfiguration.nas100Instrument
-    ? { instrument: oandaConfiguration.nas100Instrument, environment: oandaConfiguration.environment }
-    : null;
-  const liveStream = oandaProvider && configuredOanda
-    ? new LiveH4Stream({
-        instrument: configuredOanda.instrument,
-        environment: configuredOanda.environment,
-        fetchSnapshot: (count) => oandaProvider.getH4Candles(configuredOanda.instrument, count),
-        openPricingStream: (signal) => oandaProvider.openPricingStream(configuredOanda.instrument, signal),
-        reconnectDelaysMs: options.liveReconnectDelaysMs,
-      })
-    : null;
+  const oandaProvider =
+    oandaConfiguration.state === 'configured'
+      ? new OandaProvider(oandaConfiguration, options.oandaFetch)
+      : null;
+  const configuredOanda =
+    oandaConfiguration.state === 'configured' && oandaConfiguration.nas100Instrument
+      ? {
+          instrument: oandaConfiguration.nas100Instrument,
+          environment: oandaConfiguration.environment,
+        }
+      : null;
+  const liveStream =
+    oandaProvider && configuredOanda
+      ? new LiveH4Stream({
+          instrument: configuredOanda.instrument,
+          environment: configuredOanda.environment,
+          fetchSnapshot: (count) => oandaProvider.getH4Candles(configuredOanda.instrument, count),
+          openPricingStream: (signal) =>
+            oandaProvider.openPricingStream(configuredOanda.instrument, signal),
+          reconnectDelaysMs: options.liveReconnectDelaysMs,
+        })
+      : null;
   let repository: AnalysisRepository | null = null;
   let backtestRepository: BacktestRepository | null = null;
   let server: Server | null = null;
@@ -212,14 +275,35 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
       let result: SchedulerRunResult;
       if (schedulerProvider === 'oanda') {
         if (!oandaProvider || !oandaConfiguration.nas100Instrument) {
-          result = { outcome: 'failed', runKey: 'oanda:unconfigured', message: 'OANDA scheduler requires configured credentials and an explicit instrument.' };
+          result = {
+            outcome: 'failed',
+            runKey: 'oanda:unconfigured',
+            message: 'OANDA scheduler requires configured credentials and an explicit instrument.',
+          };
         } else {
-          const oandaResult = await executeScheduledOandaAnalysis(repository, oandaProvider, oandaConfiguration.nas100Instrument, { retryDelaysMs: options.scheduledOandaRetryDelaysMs, now: options.schedulerNow, eventRiskFetcher: options.eventRiskFetch });
-          result = { outcome: oandaResult.outcome, runKey: oandaResult.run.runKey, message: oandaResult.message };
+          const oandaResult = await executeScheduledOandaAnalysis(
+            repository,
+            oandaProvider,
+            oandaConfiguration.nas100Instrument,
+            {
+              retryDelaysMs: options.scheduledOandaRetryDelaysMs,
+              now: options.schedulerNow,
+              eventRiskFetcher: options.eventRiskFetch,
+            },
+          );
+          result = {
+            outcome: oandaResult.outcome,
+            runKey: oandaResult.run.runKey,
+            message: oandaResult.message,
+          };
         }
       } else {
         const fixtureResult = runSyntheticFixtureAnalysis(repository, undefined, 'scheduler');
-        result = { outcome: fixtureResult.outcome, runKey: fixtureResult.run.runKey, message: fixtureResult.message };
+        result = {
+          outcome: fixtureResult.outcome,
+          runKey: fixtureResult.run.runKey,
+          message: fixtureResult.message,
+        };
       }
 
       // Independent of the branch above: MR evaluation only needs real OANDA candles, not
@@ -228,7 +312,12 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
       if (oandaProvider && oandaConfiguration.nas100Instrument) {
         try {
           const accountSize = options.mrAccountSize ?? resolveMrAccountSize();
-          const evaluations = await evaluateActiveMeanReversionStrategies(repository, oandaProvider, oandaConfiguration.nas100Instrument, accountSize);
+          const evaluations = await evaluateActiveMeanReversionStrategies(
+            repository,
+            oandaProvider,
+            oandaConfiguration.nas100Instrument,
+            accountSize,
+          );
           const notify = options.notifyMeanReversionEvaluation ?? notifyMeanReversionEvaluation;
           for (const evaluation of evaluations) notify(evaluation);
         } catch (cause) {
@@ -279,10 +368,19 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
 
       if (request.method === 'GET' && url.pathname === '/providers/oanda/live-h4') {
         if (!liveStream) {
-          error(response, 409, 'OANDA_UNCONFIGURED', 'OANDA live observation requires configured credentials and an explicit instrument.');
+          error(
+            response,
+            409,
+            'OANDA_UNCONFIGURED',
+            'OANDA live observation requires configured credentials and an explicit instrument.',
+          );
           return;
         }
-        response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
+        response.writeHead(200, {
+          'content-type': 'text/event-stream',
+          'cache-control': 'no-cache',
+          connection: 'keep-alive',
+        });
         // writeHead() alone buffers the status line/headers in Node — they only reach the
         // socket with the next write(). Without an immediate flush, a subscriber joining while
         // the stream is disconnected (backoff, no broadcast imminent) never sees the response
@@ -296,8 +394,18 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
 
       if (request.method === 'POST' && url.pathname === '/providers/oanda/verify') {
         if (!oandaProvider) {
-          const message = oandaConfiguration.state === 'configured' ? 'OANDA provider is not configured.' : oandaConfiguration.message;
-          error(response, 409, oandaConfiguration.state === 'invalid' ? 'OANDA_CONFIGURATION_INVALID' : 'OANDA_UNCONFIGURED', message);
+          const message =
+            oandaConfiguration.state === 'configured'
+              ? 'OANDA provider is not configured.'
+              : oandaConfiguration.message;
+          error(
+            response,
+            409,
+            oandaConfiguration.state === 'invalid'
+              ? 'OANDA_CONFIGURATION_INVALID'
+              : 'OANDA_UNCONFIGURED',
+            message,
+          );
           return;
         }
         try {
@@ -309,7 +417,9 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
             environment: oandaConfiguration.environment,
             candidates,
             configuredInstrument: configuredInstrument !== null,
-            configuredInstrumentSupported: configuredInstrument !== null && instruments.some((instrument) => instrument.name === configuredInstrument),
+            configuredInstrumentSupported:
+              configuredInstrument !== null &&
+              instruments.some((instrument) => instrument.name === configuredInstrument),
           });
         } catch {
           error(response, 502, 'OANDA_VERIFY_FAILED', 'OANDA provider verification failed.');
@@ -319,16 +429,30 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
 
       if (request.method === 'GET' && url.pathname === '/providers/oanda/candles') {
         if (!oandaProvider || !oandaConfiguration.nas100Instrument) {
-          error(response, 409, 'OANDA_INSTRUMENT_UNCONFIGURED', 'Configure OANDA_ACCOUNT_ID, OANDA_API_TOKEN, and OANDA_NAS100_INSTRUMENT before requesting candles.');
+          error(
+            response,
+            409,
+            'OANDA_INSTRUMENT_UNCONFIGURED',
+            'Configure OANDA_ACCOUNT_ID, OANDA_API_TOKEN, and OANDA_NAS100_INSTRUMENT before requesting candles.',
+          );
           return;
         }
         const count = parseOandaCandleCount(url.searchParams.get('count'));
         if (count === null) {
-          error(response, 400, 'INVALID_CANDLE_COUNT', 'count must be an integer between 1 and 5000.');
+          error(
+            response,
+            400,
+            'INVALID_CANDLE_COUNT',
+            'count must be an integer between 1 and 5000.',
+          );
           return;
         }
         try {
-          json(response, 200, await oandaProvider.getH4Candles(oandaConfiguration.nas100Instrument, count));
+          json(
+            response,
+            200,
+            await oandaProvider.getH4Candles(oandaConfiguration.nas100Instrument, count),
+          );
         } catch {
           error(response, 502, 'OANDA_CANDLES_FAILED', 'OANDA candle retrieval failed.');
         }
@@ -337,13 +461,31 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
 
       if (request.method === 'POST' && url.pathname === '/runs/manual-oanda') {
         if (!oandaProvider || !oandaConfiguration.nas100Instrument) {
-          error(response, 409, 'OANDA_INSTRUMENT_UNCONFIGURED', 'Configure OANDA_ACCOUNT_ID, OANDA_API_TOKEN, and OANDA_NAS100_INSTRUMENT before requesting a manual OANDA run.');
+          error(
+            response,
+            409,
+            'OANDA_INSTRUMENT_UNCONFIGURED',
+            'Configure OANDA_ACCOUNT_ID, OANDA_API_TOKEN, and OANDA_NAS100_INSTRUMENT before requesting a manual OANDA run.',
+          );
           return;
         }
         try {
-          const result = await executeManualOandaAnalysis(activeRepository, oandaProvider, oandaConfiguration.nas100Instrument, 'user', options.eventRiskFetch ?? fetch);
+          const result = await executeManualOandaAnalysis(
+            activeRepository,
+            oandaProvider,
+            oandaConfiguration.nas100Instrument,
+            'user',
+            options.eventRiskFetch ?? fetch,
+          );
           if (!result.report) {
-            error(response, 409, result.outcome === 'failed' ? 'OANDA_MANUAL_RUN_FAILED' : 'OANDA_NO_COMPLETED_CANDLES', result.message ?? 'Manual OANDA analysis could not be completed.');
+            error(
+              response,
+              409,
+              result.outcome === 'failed'
+                ? 'OANDA_MANUAL_RUN_FAILED'
+                : 'OANDA_NO_COMPLETED_CANDLES',
+              result.message ?? 'Manual OANDA analysis could not be completed.',
+            );
             return;
           }
           json(response, result.outcome === 'created' ? 201 : 200, {
@@ -372,7 +514,12 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
             alreadyExists: result.outcome === 'already_exists',
           });
         } catch {
-          error(response, 502, 'OANDA_MANUAL_RUN_FAILED', 'Manual OANDA analysis could not be completed.');
+          error(
+            response,
+            502,
+            'OANDA_MANUAL_RUN_FAILED',
+            'Manual OANDA analysis could not be completed.',
+          );
         }
         return;
       }
@@ -380,10 +527,19 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
       if (request.method === 'POST' && url.pathname === '/runs/manual-fixture') {
         const result = runSyntheticFixtureAnalysis(activeRepository);
         if (!result.report) {
-          error(response, 409, 'FIXTURE_RUN_BLOCKED', result.message ?? 'Synthetic fixture analysis could not produce a completed report.');
+          error(
+            response,
+            409,
+            'FIXTURE_RUN_BLOCKED',
+            result.message ?? 'Synthetic fixture analysis could not produce a completed report.',
+          );
           return;
         }
-        json(response, result.outcome === 'created' ? 201 : 200, summary(result.run, result.report, result.outcome === 'already_exists'));
+        json(
+          response,
+          result.outcome === 'created' ? 201 : 200,
+          summary(result.run, result.report, result.outcome === 'already_exists'),
+        );
         return;
       }
 
@@ -393,7 +549,11 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
           error(response, 400, 'INVALID_LIMIT', 'limit must be an integer between 1 and 100.');
           return;
         }
-        json(response, 200, { runs: activeRepository.listHistory(limit).map((item) => withStrategyLabel(activeRepository, item)) });
+        json(response, 200, {
+          runs: activeRepository
+            .listHistory(limit)
+            .map((item) => withStrategyLabel(activeRepository, item)),
+        });
         return;
       }
 
@@ -418,7 +578,11 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
           error(response, 400, 'INVALID_STATUS', 'status must be draft, active, or archived.');
           return;
         }
-        json(response, 200, { strategies: activeRepository.listStrategies((status as StrategyStatus | null) ?? undefined) });
+        json(response, 200, {
+          strategies: activeRepository.listStrategies(
+            (status as StrategyStatus | null) ?? undefined,
+          ),
+        });
         return;
       }
 
@@ -429,28 +593,52 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
           json(response, 201, created);
         } catch (cause) {
           if (cause instanceof ZodError) {
-            error(response, 422, 'STRATEGY_VALIDATION_FAILED', cause.issues.map((issue) => issue.message).join('; '));
+            error(
+              response,
+              422,
+              'STRATEGY_VALIDATION_FAILED',
+              cause.issues.map((issue) => issue.message).join('; '),
+            );
             return;
           }
-          error(response, 400, 'INVALID_REQUEST_BODY', cause instanceof Error ? cause.message : 'Invalid request body.');
+          error(
+            response,
+            400,
+            'INVALID_REQUEST_BODY',
+            cause instanceof Error ? cause.message : 'Invalid request body.',
+          );
         }
         return;
       }
 
-      const activateMatch = request.method === 'POST' ? url.pathname.match(/^\/strategies\/([^/]+)\/versions\/(\d+)\/activate$/) : null;
+      const activateMatch =
+        request.method === 'POST'
+          ? url.pathname.match(/^\/strategies\/([^/]+)\/versions\/(\d+)\/activate$/)
+          : null;
       if (activateMatch) {
         const [, strategyId, versionText] = activateMatch;
         try {
-          json(response, 200, activeRepository.activateStrategyVersion(strategyId!, Number(versionText)));
+          json(
+            response,
+            200,
+            activeRepository.activateStrategyVersion(strategyId!, Number(versionText)),
+          );
         } catch (cause) {
-          const message = cause instanceof Error ? cause.message : 'Could not activate strategy version.';
+          const message =
+            cause instanceof Error ? cause.message : 'Could not activate strategy version.';
           const notFound = message.includes('does not exist');
-          error(response, notFound ? 404 : 409, notFound ? 'STRATEGY_NOT_FOUND' : 'STRATEGY_VERSION_NOT_DRAFT', message);
+          error(
+            response,
+            notFound ? 404 : 409,
+            notFound ? 'STRATEGY_NOT_FOUND' : 'STRATEGY_VERSION_NOT_DRAFT',
+            message,
+          );
         }
         return;
       }
 
-      const versionsMatch = request.method === 'POST' ? url.pathname.match(/^\/strategies\/([^/]+)\/versions$/) : null;
+      const versionsMatch =
+        request.method === 'POST' ? url.pathname.match(/^\/strategies\/([^/]+)\/versions$/) : null;
       if (versionsMatch) {
         const [, strategyId] = versionsMatch;
         try {
@@ -459,15 +647,26 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
           json(response, 201, activeRepository.saveStrategyConfig(strategyId!, version, body));
         } catch (cause) {
           if (cause instanceof ZodError) {
-            error(response, 422, 'STRATEGY_VALIDATION_FAILED', cause.issues.map((issue) => issue.message).join('; '));
+            error(
+              response,
+              422,
+              'STRATEGY_VALIDATION_FAILED',
+              cause.issues.map((issue) => issue.message).join('; '),
+            );
             return;
           }
-          error(response, 400, 'INVALID_REQUEST_BODY', cause instanceof Error ? cause.message : 'Invalid request body.');
+          error(
+            response,
+            400,
+            'INVALID_REQUEST_BODY',
+            cause instanceof Error ? cause.message : 'Invalid request body.',
+          );
         }
         return;
       }
 
-      const strategyMatch = request.method === 'GET' ? url.pathname.match(/^\/strategies\/([^/]+)$/) : null;
+      const strategyMatch =
+        request.method === 'GET' ? url.pathname.match(/^\/strategies\/([^/]+)$/) : null;
       if (strategyMatch) {
         const [, strategyId] = strategyMatch;
         const versions = activeRepository.getStrategyVersions(strategyId!);
@@ -481,17 +680,32 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
 
       if (request.method === 'GET' && url.pathname === '/backtests') {
         if (!backtestRepository) {
-          error(response, 503, 'BACKTEST_PERSISTENCE_UNAVAILABLE', 'Backtest results are unavailable.');
+          error(
+            response,
+            503,
+            'BACKTEST_PERSISTENCE_UNAVAILABLE',
+            'Backtest results are unavailable.',
+          );
           return;
         }
-        json(response, 200, { backtests: backtestRepository.listRuns(url.searchParams.get('strategyConfigId') ?? undefined) });
+        json(response, 200, {
+          backtests: backtestRepository.listRuns(
+            url.searchParams.get('strategyConfigId') ?? undefined,
+          ),
+        });
         return;
       }
 
-      const backtestMatch = request.method === 'GET' ? url.pathname.match(/^\/backtests\/([^/]+)$/) : null;
+      const backtestMatch =
+        request.method === 'GET' ? url.pathname.match(/^\/backtests\/([^/]+)$/) : null;
       if (backtestMatch) {
         if (!backtestRepository) {
-          error(response, 503, 'BACKTEST_PERSISTENCE_UNAVAILABLE', 'Backtest results are unavailable.');
+          error(
+            response,
+            503,
+            'BACKTEST_PERSISTENCE_UNAVAILABLE',
+            'Backtest results are unavailable.',
+          );
           return;
         }
         const [, runId] = backtestMatch;
@@ -509,7 +723,8 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
         return;
       }
 
-      const mrEvaluationsMatch = request.method === 'GET' ? url.pathname.match(/^\/mr-evaluations\/([^/]+)$/) : null;
+      const mrEvaluationsMatch =
+        request.method === 'GET' ? url.pathname.match(/^\/mr-evaluations\/([^/]+)$/) : null;
       if (mrEvaluationsMatch) {
         const [, strategyConfigId] = mrEvaluationsMatch;
         const limit = parseLimit(url.searchParams.get('limit'));
@@ -517,7 +732,9 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
           error(response, 400, 'INVALID_LIMIT', 'limit must be an integer between 1 and 100.');
           return;
         }
-        json(response, 200, { evaluations: activeRepository.listMeanReversionEvaluations(strategyConfigId!, limit) });
+        json(response, 200, {
+          evaluations: activeRepository.listMeanReversionEvaluations(strategyConfigId!, limit),
+        });
         return;
       }
 
@@ -527,7 +744,9 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
         response,
         500,
         'SERVICE_ERROR',
-        cause instanceof Error ? cause.message : 'The local service could not complete the request.',
+        cause instanceof Error
+          ? cause.message
+          : 'The local service could not complete the request.',
       );
     }
   };
@@ -554,10 +773,10 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
           server.once('error', reject);
           server.listen(configuredPort, LOCAL_SERVICE_HOST, () => {
             const address = server?.address();
-          if (address && typeof address !== 'string') boundPort = address.port;
-          server?.off('error', reject);
-          scheduler.start();
-          resolve(health());
+            if (address && typeof address !== 'string') boundPort = address.port;
+            server?.off('error', reject);
+            scheduler.start();
+            resolve(health());
           });
         } catch (cause) {
           reject(cause);
