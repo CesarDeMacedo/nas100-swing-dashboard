@@ -14,6 +14,18 @@ const signalClass = (signal: MeanReversionEvaluation['signal']) =>
 
 const num = (value: number | null, digits = 2) => (value === null ? 'Not available' : value.toFixed(digits));
 
+/** Position sizing is only ever computed on ENTER/HOLD with a configured protective stop and a
+ * known account size (see meanReversionRun.ts) — this mirrors that precedence so the panel
+ * reports the actual reason sizing is unavailable, rather than always blaming account size. */
+const sizeText = (evaluation: MeanReversionEvaluation) => {
+  if (evaluation.suggestedPositionSizeUnits !== null) {
+    return `${num(evaluation.suggestedPositionSizeUnits, 4)} units (${num(evaluation.suggestedRiskAmount)})`;
+  }
+  if (evaluation.signal !== 'ENTER' && evaluation.signal !== 'HOLD') return 'no open position';
+  if (evaluation.stopPrice === null) return 'no protective stop configured';
+  return 'account size not configured';
+};
+
 export function MeanReversionPanel({ open, list, onClose, onRefresh }: MeanReversionPanelProps) {
   useEffect(() => {
     if (!open) return;
@@ -55,7 +67,7 @@ export function MeanReversionPanel({ open, list, onClose, onRefresh }: MeanRever
                     stop {num(evaluation.stopPrice)} | ATR {num(evaluation.atr)} | SMA filter {evaluation.aboveSmaFilter === null ? 'n/a' : evaluation.aboveSmaFilter ? 'above' : 'below'}
                   </span>
                   <small>
-                    risk {evaluation.riskPerTradePct}% | size {evaluation.suggestedPositionSizeUnits === null ? 'account size not configured' : `${num(evaluation.suggestedPositionSizeUnits, 4)} units (${num(evaluation.suggestedRiskAmount)})`} | evaluated {evaluation.evaluatedAt}
+                    risk {evaluation.riskPerTradePct}% | size {sizeText(evaluation)} | evaluated {evaluation.evaluatedAt}
                   </small>
                 </div>
               ))}

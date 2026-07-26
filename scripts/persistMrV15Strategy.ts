@@ -43,9 +43,13 @@ function main() {
   loadProjectEnvironmentForServiceCli();
   const repository = new AnalysisRepository(process.env.NAS100_DASHBOARD_DB_PATH ?? defaultPersistencePath());
   try {
-    const activated = persistAndActivateV15(repository);
-    console.log(`Activated strategy ${activated.strategyId} version ${activated.version} ("${activated.name}").`);
-    console.log(`meanReversion.protectiveStopAtrMultiple = ${activated.parameters.meanReversion.protectiveStopAtrMultiple}`);
+    const result = persistAndActivateV15(repository);
+    if (result.status === 'active') {
+      console.log(`Activated strategy ${result.strategyId} version ${result.version} ("${result.name}").`);
+    } else {
+      console.log(`Strategy ${result.strategyId} version ${result.version} ("${result.name}") already exists with status "${result.status}" — left untouched (only a draft is auto-activated).`);
+    }
+    console.log(`meanReversion.protectiveStopAtrMultiple = ${result.parameters.meanReversion.protectiveStopAtrMultiple}`);
   } finally {
     repository.close();
   }
