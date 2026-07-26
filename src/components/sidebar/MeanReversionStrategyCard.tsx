@@ -72,10 +72,24 @@ function EvaluationCard({
             <dd>{describeMrPositionSize(evaluation)}</dd>
           </div>
           <div>
+            <dt>Exit watch</dt>
+            <dd>
+              {evaluation.exitWatchPrice === null
+                ? 'Not available'
+                : `close ≥ ${num(evaluation.exitWatchPrice)}`}
+            </dd>
+          </div>
+          <div>
             <dt>Last evaluated</dt>
             <dd>{formatTorontoTime(evaluation.evaluatedAt)}</dd>
           </div>
         </dl>
+        {evaluation.exitWatchPrice !== null ? (
+          <p className="mr-strategy-card__exit-note">
+            No fixed exit price — this strategy exits when a day's close reaches or exceeds the
+            level above (a 7-day closing high). A notification fires the day that happens.
+          </p>
+        ) : null}
         {onOpenHistory ? (
           <button type="button" className="mr-strategy-card__history-link" onClick={onOpenHistory}>
             View evaluation history

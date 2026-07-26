@@ -12,9 +12,9 @@ import type { MeanReversionEvaluation } from '../../serviceClient/localAnalysisS
  * strategies (see docs/MR_LIVE_INTEGRATION_PLAN.md) and can each hold their own open position,
  * so they get their own color pair too — otherwise two same-colored "MR entry" lines at
  * different prices would be genuinely ambiguous about which strategy each belongs to. */
-const MR_LINE_COLORS: Record<'D' | 'H4', { entry: string; stop: string }> = {
-  D: { entry: '#b388ff', stop: '#e56399' },
-  H4: { entry: '#38bdf8', stop: '#fb923c' },
+const MR_LINE_COLORS: Record<'D' | 'H4', { entry: string; stop: string; exitWatch: string }> = {
+  D: { entry: '#b388ff', stop: '#e56399', exitWatch: '#facc15' },
+  H4: { entry: '#38bdf8', stop: '#fb923c', exitWatch: '#a3e635' },
 };
 
 export type ChartPalette = {
@@ -232,6 +232,22 @@ export function mapMeanReversionPriceLines(
         title: `MR stop (${evaluation.timeframe})`,
         color: colors.stop,
         lineStyle: 'dashed',
+        axisLabelVisible: true,
+        lineWidth: 1,
+      });
+    }
+
+    // Not a target — this family exits on a condition (a new N-bar closing high), not a fixed
+    // price. Dotted (not dashed, unlike entry/stop) specifically to read as "watch level", not
+    // "order level": nothing fires just because price touches it intrabar, only a CLOSE at or
+    // above it on a future completed bar.
+    if (evaluation.exitWatchPrice !== null) {
+      lines.push({
+        id: `mr-exit-watch-${evaluation.timeframe}`,
+        price: evaluation.exitWatchPrice,
+        title: `MR exit watch (${evaluation.timeframe})`,
+        color: colors.exitWatch,
+        lineStyle: 'dotted',
         axisLabelVisible: true,
         lineWidth: 1,
       });

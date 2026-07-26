@@ -101,7 +101,8 @@ export function MeanReversionPanel({ open, list, onClose, onRefresh }: MeanRever
                     {formatTorontoTime(evaluation.referenceCandleTime)}
                   </span>
                   <span>
-                    stop {num(evaluation.stopPrice)} | ATR {num(evaluation.atr)} | SMA filter{' '}
+                    stop {num(evaluation.stopPrice)} | exit watch (close ≥){' '}
+                    {num(evaluation.exitWatchPrice)} | ATR {num(evaluation.atr)} | SMA filter{' '}
                     {evaluation.aboveSmaFilter === null
                       ? 'n/a'
                       : evaluation.aboveSmaFilter

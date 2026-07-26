@@ -1,5 +1,23 @@
 # Changelog
 
+## Exit-Watch Price for Double Seven (Answers "How Do I Know When to Exit?")
+
+- Condition-exit strategies (Double Seven) have no fixed target price — the exit is "today's
+  close is a 7-day closing high," re-evaluated fresh every bar, not a level an order can sit
+  at. That threshold is nonetheless a solvable number: `computeDouble7ExitWatchPrice`
+  (`src/domain/meanReversionStrategy.ts`) returns the max of the trailing (lookbackExitHigh-1)
+  closes — the price the NEXT completed bar needs to reach or exceed to trigger EXIT — verified
+  against the backtest walker's own exit logic (cross-checked in
+  `meanReversionStrategy.test.ts` against a known entry/exit fixture, not just re-derived).
+  null for `rsi2` (its exit condition isn't a single solvable price level) and whenever there's
+  no open position.
+- Threaded through the live evaluator (`exitWatchPrice` on `MeanReversionEvaluation`), an
+  additive `exit_watch_price` column on `mr_evaluations` (existing rows read back as null —
+  they predate the field, not a data-loss bug), the sidebar card ("Exit watch: close ≥ X" with
+  a plain-language note that it's a condition, not an order level), the evaluation-history
+  panel, and a third price line on the H4 chart per active strategy (dotted, not dashed like
+  entry/stop, specifically to read as "watch level" rather than "order level").
+
 ## Run D1 and H4 Mean-Reversion Simultaneously + UI Focus on Live Strategies
 
 - Double Seven H4 now runs live alongside D1, as its own independent strategy lineage
