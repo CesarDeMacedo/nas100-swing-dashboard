@@ -11,7 +11,8 @@ const moduleDir = dirname(fileURLToPath(import.meta.url));
  * this is the harness's own persistence, isolated so its schema can evolve independently of
  * production's. The running web service opens this file read-only to serve the new
  * `/backtests*` routes; only the CLI (this repository's write path) ever writes to it. */
-export const defaultBacktestDatabasePath = () => join(moduleDir, '.cache', 'backtest-results.sqlite');
+export const defaultBacktestDatabasePath = () =>
+  join(moduleDir, '.cache', 'backtest-results.sqlite');
 
 export type BacktestRunStatus = 'running' | 'completed' | 'failed';
 
@@ -52,6 +53,39 @@ export type BacktestSignalInput = {
 };
 
 export type StoredBacktestSignal = BacktestSignalInput;
+
+/** A condition-exit mean-reversion trade (strategyKind 'rsi2'/'double7'). Deliberately a
+ * separate table from `backtest_signals`: that table's NOT NULL stop/target/planned-R:R
+ * columns encode the pipeline's target-vs-stop geometry, which this family doesn't have. */
+export type BacktestMrTradeInput = {
+  id: string;
+  backtestRunId: string;
+  entryTime: string;
+  entryPrice: number;
+  exitTime: string | null;
+  exitPrice: number | null;
+  exitReason: 'signal' | 'protective_stop' | 'timeout' | 'end_of_data' | null;
+  barsHeld: number | null;
+  atrAtEntry: number | null;
+  pctReturn: number | null;
+  atrMultipleReturn: number | null;
+};
+
+export type StoredBacktestMrTrade = BacktestMrTradeInput;
+
+type BacktestMrTradeRow = {
+  id: string;
+  backtest_run_id: string;
+  entry_time: string;
+  entry_price: number;
+  exit_time: string | null;
+  exit_price: number | null;
+  exit_reason: BacktestMrTradeInput['exitReason'];
+  bars_held: number | null;
+  atr_at_entry: number | null;
+  pct_return: number | null;
+  atr_multiple_return: number | null;
+};
 
 type BacktestRunRow = {
   id: string;
@@ -125,6 +159,22 @@ const createSchema = (database: DatabaseSync) => {
     ) STRICT;
 
     CREATE INDEX IF NOT EXISTS backtest_signals_run_idx ON backtest_signals(backtest_run_id);
+
+    CREATE TABLE IF NOT EXISTS backtest_mr_trades (
+      id TEXT PRIMARY KEY,
+      backtest_run_id TEXT NOT NULL REFERENCES backtest_runs(id) ON DELETE CASCADE,
+      entry_time TEXT NOT NULL,
+      entry_price REAL NOT NULL,
+      exit_time TEXT,
+      exit_price REAL,
+      exit_reason TEXT CHECK (exit_reason IN ('signal', 'protective_stop', 'timeout', 'end_of_data')),
+      bars_held INTEGER,
+      atr_at_entry REAL,
+      pct_return REAL,
+      atr_multiple_return REAL
+    ) STRICT;
+
+    CREATE INDEX IF NOT EXISTS backtest_mr_trades_run_idx ON backtest_mr_trades(backtest_run_id);
   `);
 };
 
@@ -178,18 +228,29 @@ export class BacktestRepository {
          VALUES (?, ?, ?, ?, ?, 'running', ?)`,
       )
       .run(run.id, run.strategyConfigId, run.instrument, run.rangeStart, run.rangeEnd, startedAt);
-    return { ...run, status: 'running', startedAt, completedAt: null, frameCount: null, errorMessage: null };
+    return {
+      ...run,
+      status: 'running',
+      startedAt,
+      completedAt: null,
+      frameCount: null,
+      errorMessage: null,
+    };
   }
 
   public completeRun(id: string, frameCount: number) {
     this.database
-      .prepare(`UPDATE backtest_runs SET status = 'completed', completed_at = ?, frame_count = ? WHERE id = ?`)
+      .prepare(
+        `UPDATE backtest_runs SET status = 'completed', completed_at = ?, frame_count = ? WHERE id = ?`,
+      )
       .run(new Date().toISOString(), frameCount, id);
   }
 
   public failRun(id: string, errorMessage: string) {
     this.database
-      .prepare(`UPDATE backtest_runs SET status = 'failed', completed_at = ?, error_message = ? WHERE id = ?`)
+      .prepare(
+        `UPDATE backtest_runs SET status = 'failed', completed_at = ?, error_message = ? WHERE id = ?`,
+      )
       .run(new Date().toISOString(), errorMessage, id);
   }
 
@@ -222,21 +283,72 @@ export class BacktestRepository {
       );
   }
 
+  public insertMrTrade(trade: BacktestMrTradeInput) {
+    this.database
+      .prepare(
+        `INSERT INTO backtest_mr_trades (
+          id, backtest_run_id, entry_time, entry_price, exit_time, exit_price, exit_reason,
+          bars_held, atr_at_entry, pct_return, atr_multiple_return
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        trade.id,
+        trade.backtestRunId,
+        trade.entryTime,
+        trade.entryPrice,
+        trade.exitTime,
+        trade.exitPrice,
+        trade.exitReason,
+        trade.barsHeld,
+        trade.atrAtEntry,
+        trade.pctReturn,
+        trade.atrMultipleReturn,
+      );
+  }
+
+  public listMrTrades(backtestRunId: string): StoredBacktestMrTrade[] {
+    const rows = this.database
+      .prepare('SELECT * FROM backtest_mr_trades WHERE backtest_run_id = ? ORDER BY entry_time ASC')
+      .all(backtestRunId) as BacktestMrTradeRow[];
+    return rows.map((row) => ({
+      id: row.id,
+      backtestRunId: row.backtest_run_id,
+      entryTime: row.entry_time,
+      entryPrice: row.entry_price,
+      exitTime: row.exit_time,
+      exitPrice: row.exit_price,
+      exitReason: row.exit_reason,
+      barsHeld: row.bars_held,
+      atrAtEntry: row.atr_at_entry,
+      pctReturn: row.pct_return,
+      atrMultipleReturn: row.atr_multiple_return,
+    }));
+  }
+
   public listRuns(strategyConfigId?: string): StoredBacktestRun[] {
     const rows = strategyConfigId
-      ? (this.database.prepare('SELECT * FROM backtest_runs WHERE strategy_config_id = ? ORDER BY started_at DESC').all(strategyConfigId) as BacktestRunRow[])
-      : (this.database.prepare('SELECT * FROM backtest_runs ORDER BY started_at DESC').all() as BacktestRunRow[]);
+      ? (this.database
+          .prepare(
+            'SELECT * FROM backtest_runs WHERE strategy_config_id = ? ORDER BY started_at DESC',
+          )
+          .all(strategyConfigId) as BacktestRunRow[])
+      : (this.database
+          .prepare('SELECT * FROM backtest_runs ORDER BY started_at DESC')
+          .all() as BacktestRunRow[]);
     return rows.map(toStoredRun);
   }
 
   public getRun(id: string): StoredBacktestRun | null {
-    const row = this.database.prepare('SELECT * FROM backtest_runs WHERE id = ?').get(id) as BacktestRunRow | undefined;
+    const row = this.database.prepare('SELECT * FROM backtest_runs WHERE id = ?').get(id) as
+      BacktestRunRow | undefined;
     return row ? toStoredRun(row) : null;
   }
 
   public listSignals(backtestRunId: string): StoredBacktestSignal[] {
     const rows = this.database
-      .prepare('SELECT * FROM backtest_signals WHERE backtest_run_id = ? ORDER BY decision_candle_time ASC')
+      .prepare(
+        'SELECT * FROM backtest_signals WHERE backtest_run_id = ? ORDER BY decision_candle_time ASC',
+      )
       .all(backtestRunId) as BacktestSignalRow[];
     return rows.map(toStoredSignal);
   }
