@@ -32,6 +32,10 @@ export type TradePlan = {
   stopPrice: number | null;
   stopMethod: string | null;
   targets: number[];
+  /** Where `targets[0]` — the level the planned R:R is measured against — came from:
+   * 'structural' when it's a real zone/swing level, 'synthetic' when it's the 2R fallback
+   * added because fewer than two structural targets survived, 'none' when there is no target. */
+  targetSource: 'structural' | 'synthetic' | 'none';
   estimatedRewardRisk: number | null;
   atrUsed: number | null;
   sourceCandleTime: string | null;
@@ -44,14 +48,15 @@ export type TradePlan = {
 const uniqueSorted = (values: number[], direction: EntryDirection, entry: number) =>
   [...new Set(values.map((value) => Number(value.toFixed(10))))]
     .filter((value) => (direction === 'long' ? value > entry : value < entry))
-    .sort((left, right) =>
-      direction === 'long' ? left - right : right - left,
-    );
+    .sort((left, right) => (direction === 'long' ? left - right : right - left));
 
 const candlePosition = (candle: Candle) =>
   candle.high === candle.low ? 0.5 : (candle.close - candle.low) / (candle.high - candle.low);
 
-export function calculateTradePlan(input: TradePlanInput, params: ResolvedStrategyParameters = DEFAULT_STRATEGY_PARAMETERS): TradePlan {
+export function calculateTradePlan(
+  input: TradePlanInput,
+  params: ResolvedStrategyParameters = DEFAULT_STRATEGY_PARAMETERS,
+): TradePlan {
   const { direction, technicalContext: context, latestCandle } = input;
   const atr = context.indicatorSnapshot.atr14.value;
   const ema20 = context.indicatorSnapshot.ema20.value;
@@ -68,39 +73,81 @@ export function calculateTradePlan(input: TradePlanInput, params: ResolvedStrate
     return unavailable();
   }
 
-  const zones = direction === 'long'
-    ? [input.preferredEntryZone, ...input.supportZones].filter(Boolean) as PriceZone[]
-    : [input.preferredEntryZone, ...input.resistanceZones].filter(Boolean) as PriceZone[];
-  const nearZone = zones.find((zone) => currentPrice! >= zone.low && currentPrice! <= zone.high) ??
-    zones.find((zone) => Math.min(Math.abs(currentPrice! - zone.low), Math.abs(currentPrice! - zone.high)) <= atr! * params.atrLocationTolerance);
-  const nearEma = Math.min(Math.abs(currentPrice! - ema20!), Math.abs(currentPrice! - ema21!)) <= atr! * params.atrLocationTolerance;
-  const bearishStructure = ['bearish_trend', 'bearish_breakout'].includes(context.canonicalH4Structure);
-  const bullishStructure = ['bullish_trend', 'bullish_breakout'].includes(context.canonicalH4Structure);
-  const candidates = direction === 'long'
-    ? [...zones.map((zone) => zone.low), context.h4Structure.recentSwingLow].filter((value): value is number => value !== null)
-    : [...zones.map((zone) => zone.high), context.h4Structure.recentSwingHigh].filter((value): value is number => value !== null);
-  const invalidationBase = candidates.length ? (direction === 'long' ? Math.min(...candidates) : Math.max(...candidates)) : null;
-  const invalidationPrice = invalidationBase === null ? null : direction === 'long'
-    ? invalidationBase - atr! * params.atrInvalidationBuffer
-    : invalidationBase + atr! * params.atrInvalidationBuffer;
-  const structurallyInvalidated = invalidationPrice !== null && (direction === 'long' ? currentPrice! < invalidationPrice : currentPrice! > invalidationPrice);
+  const zones =
+    direction === 'long'
+      ? ([input.preferredEntryZone, ...input.supportZones].filter(Boolean) as PriceZone[])
+      : ([input.preferredEntryZone, ...input.resistanceZones].filter(Boolean) as PriceZone[]);
+  const nearZone =
+    zones.find((zone) => currentPrice! >= zone.low && currentPrice! <= zone.high) ??
+    zones.find(
+      (zone) =>
+        Math.min(Math.abs(currentPrice! - zone.low), Math.abs(currentPrice! - zone.high)) <=
+        atr! * params.atrLocationTolerance,
+    );
+  const nearEma =
+    Math.min(Math.abs(currentPrice! - ema20!), Math.abs(currentPrice! - ema21!)) <=
+    atr! * params.atrLocationTolerance;
+  const bearishStructure = ['bearish_trend', 'bearish_breakout'].includes(
+    context.canonicalH4Structure,
+  );
+  const bullishStructure = ['bullish_trend', 'bullish_breakout'].includes(
+    context.canonicalH4Structure,
+  );
+  const candidates =
+    direction === 'long'
+      ? [...zones.map((zone) => zone.low), context.h4Structure.recentSwingLow].filter(
+          (value): value is number => value !== null,
+        )
+      : [...zones.map((zone) => zone.high), context.h4Structure.recentSwingHigh].filter(
+          (value): value is number => value !== null,
+        );
+  const deepestBase = candidates.length
+    ? direction === 'long'
+      ? Math.min(...candidates)
+      : Math.max(...candidates)
+    : null;
+  const invalidationBase =
+    params.invalidationAnchor === 'traded_zone'
+      ? direction === 'long'
+        ? (nearZone?.low ?? context.h4Structure.recentSwingLow ?? deepestBase)
+        : (nearZone?.high ?? context.h4Structure.recentSwingHigh ?? deepestBase)
+      : deepestBase;
+  const invalidationPrice =
+    invalidationBase === null
+      ? null
+      : direction === 'long'
+        ? invalidationBase - atr! * params.atrInvalidationBuffer
+        : invalidationBase + atr! * params.atrInvalidationBuffer;
+  const structurallyInvalidated =
+    invalidationPrice !== null &&
+    (direction === 'long' ? currentPrice! < invalidationPrice : currentPrice! > invalidationPrice);
   const incompatibleStructure = direction === 'long' ? bearishStructure : bullishStructure;
-  const tooExtended = direction === 'long'
-    ? currentPrice! > Math.max(ema20!, ema21!) + atr! * params.atrLocationTolerance && !nearZone
-    : currentPrice! < Math.min(ema20!, ema21!) - atr! * params.atrLocationTolerance && !nearZone;
-  const locationStatus: EntryLocation = structurallyInvalidated || incompatibleStructure
-    ? 'invalid'
-    : nearZone || nearEma
-      ? 'acceptable'
-      : tooExtended
-        ? 'too_extended'
-        : 'not_reached';
+  const tooExtended =
+    direction === 'long'
+      ? currentPrice! > Math.max(ema20!, ema21!) + atr! * params.atrLocationTolerance && !nearZone
+      : currentPrice! < Math.min(ema20!, ema21!) - atr! * params.atrLocationTolerance && !nearZone;
+  const locationStatus: EntryLocation =
+    structurallyInvalidated || incompatibleStructure
+      ? 'invalid'
+      : nearZone || nearEma
+        ? 'acceptable'
+        : tooExtended
+          ? 'too_extended'
+          : 'not_reached';
 
-  const boundary = direction === 'long' ? nearZone?.high ?? Math.max(ema20!, ema21!) : nearZone?.low ?? Math.min(ema20!, ema21!);
-  const confirmed = latestCandle!.isClosed &&
+  const boundary =
+    direction === 'long'
+      ? (nearZone?.high ?? Math.max(ema20!, ema21!))
+      : (nearZone?.low ?? Math.min(ema20!, ema21!));
+  const confirmed =
+    latestCandle!.isClosed &&
     (direction === 'long'
-      ? latestCandle!.close > latestCandle!.open && candlePosition(latestCandle!) >= params.confirmationClosePositionThreshold && latestCandle!.close >= boundary
-      : latestCandle!.close < latestCandle!.open && candlePosition(latestCandle!) <= 1 - params.confirmationClosePositionThreshold && latestCandle!.close <= boundary) &&
+      ? latestCandle!.close > latestCandle!.open &&
+        candlePosition(latestCandle!) >= params.confirmationClosePositionThreshold &&
+        latestCandle!.close >= boundary
+      : latestCandle!.close < latestCandle!.open &&
+        candlePosition(latestCandle!) <= 1 - params.confirmationClosePositionThreshold &&
+        latestCandle!.close <= boundary) &&
     !structurallyInvalidated;
   const confirmationStatus: ConfirmationCandle = !latestCandle!.isClosed
     ? 'open'
@@ -109,47 +156,141 @@ export function calculateTradePlan(input: TradePlanInput, params: ResolvedStrate
       : confirmed
         ? 'confirmed'
         : 'missing';
-  const entryPrice = confirmed ? direction === 'long'
-    ? latestCandle!.high + atr! * params.atrTriggerBuffer
-    : latestCandle!.low - atr! * params.atrTriggerBuffer : null;
+  const entryPrice = confirmed
+    ? direction === 'long'
+      ? latestCandle!.high + atr! * params.atrTriggerBuffer
+      : latestCandle!.low - atr! * params.atrTriggerBuffer
+    : null;
   const entryTrigger = confirmed
-    ? direction === 'long' ? 'Enter above the completed bullish H4 confirmation high.' : 'Enter below the completed bearish H4 confirmation low.'
-    : direction === 'long' ? 'Wait for a completed bullish H4 close above support.' : 'Wait for a completed bearish H4 close below resistance.';
-  const stopPrice = invalidationPrice === null || entryPrice === null ? null : direction === 'long'
-    ? invalidationPrice - atr! * params.atrStopBuffer
-    : invalidationPrice + atr! * params.atrStopBuffer;
-  const levelZones = direction === 'long' ? input.resistanceZones.map((zone) => zone.low) : input.supportZones.map((zone) => zone.high);
-  const swingTarget = direction === 'long' ? context.h4Structure.recentSwingHigh : context.h4Structure.recentSwingLow;
-  let targets = entryPrice === null ? [] : uniqueSorted([...levelZones, ...(swingTarget === null ? [] : [swingTarget])], direction, entryPrice);
+    ? direction === 'long'
+      ? 'Enter above the completed bullish H4 confirmation high.'
+      : 'Enter below the completed bearish H4 confirmation low.'
+    : direction === 'long'
+      ? 'Wait for a completed bullish H4 close above support.'
+      : 'Wait for a completed bearish H4 close below resistance.';
+  const stopPrice =
+    invalidationPrice === null || entryPrice === null
+      ? null
+      : direction === 'long'
+        ? invalidationPrice - atr! * params.atrStopBuffer
+        : invalidationPrice + atr! * params.atrStopBuffer;
+  const levelZones =
+    direction === 'long'
+      ? input.resistanceZones.map((zone) => zone.low)
+      : input.supportZones.map((zone) => zone.high);
+  const swingTarget =
+    direction === 'long' ? context.h4Structure.recentSwingHigh : context.h4Structure.recentSwingLow;
+  let targets =
+    entryPrice === null
+      ? []
+      : uniqueSorted(
+          [...levelZones, ...(swingTarget === null ? [] : [swingTarget])],
+          direction,
+          entryPrice,
+        );
+  const structuralFirstTarget = targets[0];
   if (entryPrice !== null && stopPrice !== null && targets.length < 2) {
     const risk = Math.abs(entryPrice - stopPrice);
-    targets = uniqueSorted([...targets, direction === 'long' ? entryPrice + risk * 2 : entryPrice - risk * 2, direction === 'long' ? entryPrice + risk * 3 : entryPrice - risk * 3], direction, entryPrice);
+    targets = uniqueSorted(
+      [
+        ...targets,
+        direction === 'long' ? entryPrice + risk * 2 : entryPrice - risk * 2,
+        direction === 'long' ? entryPrice + risk * 3 : entryPrice - risk * 3,
+      ],
+      direction,
+      entryPrice,
+    );
   }
   const firstTarget = targets[0];
-  const risk = entryPrice === null || stopPrice === null ? null : direction === 'long' ? entryPrice - stopPrice : stopPrice - entryPrice;
-  const reward = entryPrice === null || firstTarget === undefined ? null : direction === 'long' ? firstTarget - entryPrice : entryPrice - firstTarget;
-  const estimatedRewardRisk = risk !== null && reward !== null && risk > 0 && reward > 0 ? reward / risk : null;
+  const targetSource: TradePlan['targetSource'] =
+    firstTarget === undefined
+      ? 'none'
+      : firstTarget === structuralFirstTarget
+        ? 'structural'
+        : 'synthetic';
+  const risk =
+    entryPrice === null || stopPrice === null
+      ? null
+      : direction === 'long'
+        ? entryPrice - stopPrice
+        : stopPrice - entryPrice;
+  const reward =
+    entryPrice === null || firstTarget === undefined
+      ? null
+      : direction === 'long'
+        ? firstTarget - entryPrice
+        : entryPrice - firstTarget;
+  const estimatedRewardRisk =
+    risk !== null && reward !== null && risk > 0 && reward > 0 ? reward / risk : null;
   const warnings = [
-    ...(estimatedRewardRisk !== null && estimatedRewardRisk < params.minRewardRisk ? [`Estimated reward-to-risk is below ${params.minRewardRisk.toFixed(1)}`] : []),
-    ...(context.latestCandleStatus !== 'COMPLETED' ? ['Technical context latest candle is not completed'] : []),
+    ...(estimatedRewardRisk !== null && estimatedRewardRisk < params.minRewardRisk
+      ? [`Estimated reward-to-risk is below ${params.minRewardRisk.toFixed(1)}`]
+      : []),
+    ...(context.latestCandleStatus !== 'COMPLETED'
+      ? ['Technical context latest candle is not completed']
+      : []),
   ];
-  const status: TradePlanStatus = locationStatus === 'invalid' || structurallyInvalidated || (entryPrice !== null && (stopPrice === null || estimatedRewardRisk === null || estimatedRewardRisk < params.minRewardRisk))
-    ? 'invalid'
-    : locationStatus !== 'acceptable' || confirmationStatus !== 'confirmed'
-      ? 'forming'
-      : 'ready';
+  const status: TradePlanStatus =
+    locationStatus === 'invalid' ||
+    structurallyInvalidated ||
+    (entryPrice !== null &&
+      (stopPrice === null ||
+        estimatedRewardRisk === null ||
+        estimatedRewardRisk < params.minRewardRisk))
+      ? 'invalid'
+      : locationStatus !== 'acceptable' || confirmationStatus !== 'confirmed'
+        ? 'forming'
+        : 'ready';
   return {
-    direction, status, locationStatus, confirmationStatus, entryTrigger, entryPrice, invalidationPrice, stopPrice,
-    stopMethod: stopPrice === null ? null : `Structural invalidation plus ${params.atrStopBuffer} ATR`,
-    targets, estimatedRewardRisk, atrUsed: atr, sourceCandleTime,
+    direction,
+    status,
+    locationStatus,
+    confirmationStatus,
+    entryTrigger,
+    entryPrice,
+    invalidationPrice,
+    stopPrice,
+    stopMethod:
+      stopPrice === null ? null : `Structural invalidation plus ${params.atrStopBuffer} ATR`,
+    targets,
+    targetSource,
+    estimatedRewardRisk,
+    atrUsed: atr,
+    sourceCandleTime,
     reasons: [
-      ...(locationStatus === 'acceptable' ? ['Entry location is within the approved ATR or zone tolerance'] : []),
-      ...(confirmationStatus === 'confirmed' ? ['Latest completed H4 candle confirms the direction'] : []),
-    ], warnings, missingInputs, structurallyInvalidated,
+      ...(locationStatus === 'acceptable'
+        ? ['Entry location is within the approved ATR or zone tolerance']
+        : []),
+      ...(confirmationStatus === 'confirmed'
+        ? ['Latest completed H4 candle confirms the direction']
+        : []),
+    ],
+    warnings,
+    missingInputs,
+    structurallyInvalidated,
   };
 
   function unavailable(): TradePlan {
-    return { direction, status: 'unavailable', locationStatus: 'unknown', confirmationStatus: latestCandle?.isClosed ? 'unknown' : 'open', entryTrigger: 'Required trade-plan inputs are unavailable.', entryPrice: null, invalidationPrice: null, stopPrice: null, stopMethod: null, targets: [], estimatedRewardRisk: null, atrUsed: atr, sourceCandleTime, reasons: [], warnings: [], missingInputs, structurallyInvalidated: false };
+    return {
+      direction,
+      status: 'unavailable',
+      locationStatus: 'unknown',
+      confirmationStatus: latestCandle?.isClosed ? 'unknown' : 'open',
+      entryTrigger: 'Required trade-plan inputs are unavailable.',
+      entryPrice: null,
+      invalidationPrice: null,
+      stopPrice: null,
+      stopMethod: null,
+      targets: [],
+      targetSource: 'none',
+      estimatedRewardRisk: null,
+      atrUsed: atr,
+      sourceCandleTime,
+      reasons: [],
+      warnings: [],
+      missingInputs,
+      structurallyInvalidated: false,
+    };
   }
 }
 
