@@ -1,4 +1,5 @@
 import type { Candle } from '../schemas/candles';
+import { DEFAULT_STRATEGY_PARAMETERS } from './strategyParameters';
 import { buildTechnicalContext } from './technicalContext';
 import {
   evaluatePatienceFilter,
@@ -99,6 +100,23 @@ describe('Patience Filter', () => {
 
     expect(evaluatePatienceFilter('long', incomplete).status).toBe('waiting');
     expect(evaluatePatienceFilter('long', contradictory).status).toBe('blocked');
+  });
+
+  it('treats an empty crossMarketPrimaryInstruments as opting out of the gate, not as permanently unpassable', () => {
+    // Regression: on an empty array, `[].includes('contradicting')` and
+    // `[].includes('confirming')` are both false — without an explicit empty-array branch this
+    // fell through to the same "waiting, confirmation incomplete" path as a real unconfirmed
+    // signal, making the gate impossible to ever pass instead of a genuine no-op.
+    const value = input();
+    value.crossMarket.us500.long = 'neutral';
+    value.crossMarket.us30.long = 'neutral';
+    value.crossMarket.russell2000.long = 'neutral';
+    const params = { ...DEFAULT_STRATEGY_PARAMETERS, crossMarketPrimaryInstruments: [] };
+
+    const result = evaluatePatienceFilter('long', value, params);
+
+    expect(result).toMatchObject({ status: 'allowed', canEnter: true });
+    expect(result.passedChecks).toContain('primary_cross_market_confirmation');
   });
 
   it('does not require Russell 2000 and evaluates directions independently', () => {

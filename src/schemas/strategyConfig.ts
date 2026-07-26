@@ -46,7 +46,9 @@ export const StrategyParametersSchema = z.object({
   // Below 0.5 the long/short bar (threshold / 1-threshold) would stop meaning "closed toward
   // the favorable extreme" at all — 0.5 is the floor where both sides collapse to the midpoint.
   confirmationClosePositionThreshold: z.number().min(0.5, 'confirmationClosePositionThreshold must be >= 0.5').max(1.0),
-  crossMarketPrimaryInstruments: z.array(CrossMarketInstrumentKeySchema).min(1),
+  // An empty array is a deliberate opt-out of the primary cross-market gate entirely (see
+  // patienceFilter.ts) — not a mistake, so no .min(1) floor here.
+  crossMarketPrimaryInstruments: z.array(CrossMarketInstrumentKeySchema),
   setupScoreWeights: SetupScoreWeightsSchema,
   // Out of scope for v1 replay (event-risk history isn't fetched/replayed yet), but present
   // for forward-compatibility since a "strategy" is expected to eventually own these too.

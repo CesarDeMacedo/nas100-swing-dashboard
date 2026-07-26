@@ -103,7 +103,14 @@ export function evaluatePatienceFilter(
   } else blockingReasons.push('Confirmation candle is invalid');
 
   const primarySignals = params.crossMarketPrimaryInstruments.map((key) => input.crossMarket[key][direction]);
-  if (primarySignals.includes('contradicting')) {
+  if (params.crossMarketPrimaryInstruments.length === 0) {
+    // No primary cross-market instrument is configured — this gate is opted out of entirely,
+    // not "waiting on a signal that will never come". Must be handled before the includes()
+    // checks below: on an empty array both `includes('contradicting')` and `includes('confirming')`
+    // are false, which would otherwise fall through to the waiting branch and make the gate
+    // permanently unpassable instead of a no-op.
+    passedChecks.push('primary_cross_market_confirmation');
+  } else if (primarySignals.includes('contradicting')) {
     blockingReasons.push('A primary cross-market index contradicts the direction');
   } else if (primarySignals.includes('confirming')) {
     passedChecks.push('primary_cross_market_confirmation');
