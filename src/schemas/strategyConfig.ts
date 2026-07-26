@@ -43,6 +43,9 @@ export const StrategyParametersSchema = z.object({
   atrTriggerBuffer: z.number().positive(),
   atrStopBuffer: z.number().positive(),
   atrInvalidationBuffer: z.number().positive(),
+  // Below 0.5 the long/short bar (threshold / 1-threshold) would stop meaning "closed toward
+  // the favorable extreme" at all — 0.5 is the floor where both sides collapse to the midpoint.
+  confirmationClosePositionThreshold: z.number().min(0.5, 'confirmationClosePositionThreshold must be >= 0.5').max(1.0),
   crossMarketPrimaryInstruments: z.array(CrossMarketInstrumentKeySchema).min(1),
   setupScoreWeights: SetupScoreWeightsSchema,
   // Out of scope for v1 replay (event-risk history isn't fetched/replayed yet), but present

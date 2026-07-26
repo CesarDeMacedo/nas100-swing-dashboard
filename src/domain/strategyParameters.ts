@@ -18,6 +18,10 @@ export type ResolvedStrategyParameters = {
   atrTriggerBuffer: number;
   atrStopBuffer: number;
   atrInvalidationBuffer: number;
+  /** Minimum normalized close position (0 = closed at the candle's low, 1 = closed at its high)
+   * required to confirm a long entry candle. The short side mirrors this at `1 - threshold` (so
+   * the default 0.6 keeps today's exact 0.6/0.4 long/short pair) — see tradePlan.ts. */
+  confirmationClosePositionThreshold: number;
   crossMarketPrimaryInstruments: readonly CrossMarketInstrumentKey[];
   setupScoreWeights: SetupScoreWeights;
 };
@@ -33,6 +37,7 @@ export const resolveStrategyParameters = (parameters: {
   atrTriggerBuffer: number;
   atrStopBuffer: number;
   atrInvalidationBuffer: number;
+  confirmationClosePositionThreshold: number;
   crossMarketPrimaryInstruments: readonly CrossMarketInstrumentKey[];
   setupScoreWeights: SetupScoreWeights;
 }): ResolvedStrategyParameters => ({
@@ -42,6 +47,7 @@ export const resolveStrategyParameters = (parameters: {
   atrTriggerBuffer: parameters.atrTriggerBuffer,
   atrStopBuffer: parameters.atrStopBuffer,
   atrInvalidationBuffer: parameters.atrInvalidationBuffer,
+  confirmationClosePositionThreshold: parameters.confirmationClosePositionThreshold,
   crossMarketPrimaryInstruments: parameters.crossMarketPrimaryInstruments,
   setupScoreWeights: parameters.setupScoreWeights,
 });
@@ -55,6 +61,7 @@ export const DEFAULT_STRATEGY_PARAMETERS: ResolvedStrategyParameters = {
   atrTriggerBuffer: 0.05,
   atrStopBuffer: 0.25,
   atrInvalidationBuffer: 0.1,
+  confirmationClosePositionThreshold: 0.6,
   crossMarketPrimaryInstruments: ['us500', 'us30'],
   setupScoreWeights: {
     trend: 20,

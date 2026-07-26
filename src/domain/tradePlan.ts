@@ -99,8 +99,8 @@ export function calculateTradePlan(input: TradePlanInput, params: ResolvedStrate
   const boundary = direction === 'long' ? nearZone?.high ?? Math.max(ema20!, ema21!) : nearZone?.low ?? Math.min(ema20!, ema21!);
   const confirmed = latestCandle!.isClosed &&
     (direction === 'long'
-      ? latestCandle!.close > latestCandle!.open && candlePosition(latestCandle!) >= 0.6 && latestCandle!.close >= boundary
-      : latestCandle!.close < latestCandle!.open && candlePosition(latestCandle!) <= 0.4 && latestCandle!.close <= boundary) &&
+      ? latestCandle!.close > latestCandle!.open && candlePosition(latestCandle!) >= params.confirmationClosePositionThreshold && latestCandle!.close >= boundary
+      : latestCandle!.close < latestCandle!.open && candlePosition(latestCandle!) <= 1 - params.confirmationClosePositionThreshold && latestCandle!.close <= boundary) &&
     !structurallyInvalidated;
   const confirmationStatus: ConfirmationCandle = !latestCandle!.isClosed
     ? 'open'

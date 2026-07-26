@@ -79,6 +79,7 @@ describe('localAnalysisService', () => {
     atrTriggerBuffer: 0.05,
     atrStopBuffer: 0.25,
     atrInvalidationBuffer: 0.1,
+    confirmationClosePositionThreshold: 0.6,
     crossMarketPrimaryInstruments: ['us500', 'us30'] as ('us500' | 'us30' | 'russell2000')[],
     setupScoreWeights: { trend: 20, structure: 20, momentum: 15, location: 15, crossMarket: 10, eventRisk: 5, rewardRisk: 10, patienceReadiness: 5 },
     eventRisk: { blockingWindowMinutes: 60, minImpact: 'High' as const },

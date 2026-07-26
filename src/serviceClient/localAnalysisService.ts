@@ -125,6 +125,7 @@ export type StrategyParameters = {
   atrTriggerBuffer: number;
   atrStopBuffer: number;
   atrInvalidationBuffer: number;
+  confirmationClosePositionThreshold: number;
   crossMarketPrimaryInstruments: ('us500' | 'us30' | 'russell2000')[];
   setupScoreWeights: { trend: number; structure: number; momentum: number; location: number; crossMarket: number; eventRisk: number; rewardRisk: number; patienceReadiness: number };
   eventRisk: { blockingWindowMinutes: number; minImpact: 'High' | 'Medium' | 'Low' };
