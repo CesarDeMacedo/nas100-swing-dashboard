@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import type { SwingReport } from '../application/buildSwingReport';
 import { StrategyConfigInputSchema, type StrategyConfig, type StrategyConfigInput, type StrategyParameters, type StrategyStatus } from '../schemas/strategyConfig';
 
-export const PERSISTENCE_SCHEMA_VERSION = 3;
+export const PERSISTENCE_SCHEMA_VERSION = 4;
 
 export type AnalysisRunStatus = 'COMPLETED' | 'BLOCKED' | 'FAILED';
 
@@ -64,6 +64,55 @@ type StrategyConfigRow = {
   premium_score_threshold: number;
   config_json: string;
   created_at: string;
+};
+
+export type MeanReversionSignal = 'ENTER' | 'HOLD' | 'EXIT' | 'FLAT';
+
+/** One immutable, read-only snapshot of what a live MR-kind strategy evaluated to at a given
+ * completed bar — never updated in place (see `saveMeanReversionEvaluation`). */
+export type MeanReversionEvaluationInput = {
+  id: string;
+  strategyConfigId: string;
+  strategyId: string;
+  version: number;
+  instrument: string;
+  timeframe: 'D' | 'H4';
+  evaluatedAt: string;
+  referenceCandleTime: string;
+  referenceClose: number;
+  signal: MeanReversionSignal;
+  stopPrice: number | null;
+  atr: number | null;
+  smaFilterValue: number | null;
+  aboveSmaFilter: boolean | null;
+  riskPerTradePct: number;
+  accountSize: number | null;
+  suggestedRiskAmount: number | null;
+  suggestedPositionSizeUnits: number | null;
+};
+
+export type StoredMeanReversionEvaluation = MeanReversionEvaluationInput & { persistedAt: string };
+
+type MeanReversionEvaluationRow = {
+  id: string;
+  strategy_config_id: string;
+  strategy_id: string;
+  version: number;
+  instrument: string;
+  timeframe: 'D' | 'H4';
+  evaluated_at: string;
+  reference_candle_time: string;
+  reference_close: number;
+  signal: MeanReversionSignal;
+  stop_price: number | null;
+  atr: number | null;
+  sma_filter_value: number | null;
+  above_sma_filter: number | null;
+  risk_per_trade_pct: number;
+  account_size: number | null;
+  suggested_risk_amount: number | null;
+  suggested_position_size_units: number | null;
+  persisted_at: string;
 };
 
 const createSchema = (database: DatabaseSync) => {
@@ -147,6 +196,31 @@ const createSchema = (database: DatabaseSync) => {
   }
 
   database.exec(`
+    CREATE TABLE IF NOT EXISTS mr_evaluations (
+      id TEXT PRIMARY KEY,
+      strategy_config_id TEXT NOT NULL REFERENCES strategy_configs(id),
+      strategy_id TEXT NOT NULL,
+      version INTEGER NOT NULL,
+      instrument TEXT NOT NULL,
+      timeframe TEXT NOT NULL CHECK (timeframe IN ('D', 'H4')),
+      evaluated_at TEXT NOT NULL,
+      reference_candle_time TEXT NOT NULL,
+      reference_close REAL NOT NULL,
+      signal TEXT NOT NULL CHECK (signal IN ('ENTER', 'HOLD', 'EXIT', 'FLAT')),
+      stop_price REAL,
+      atr REAL,
+      sma_filter_value REAL,
+      above_sma_filter INTEGER CHECK (above_sma_filter IN (0, 1) OR above_sma_filter IS NULL),
+      risk_per_trade_pct REAL NOT NULL,
+      account_size REAL,
+      suggested_risk_amount REAL,
+      suggested_position_size_units REAL,
+      persisted_at TEXT NOT NULL
+    ) STRICT;
+
+    CREATE INDEX IF NOT EXISTS mr_evaluations_strategy_evaluated_at_idx
+      ON mr_evaluations(strategy_config_id, evaluated_at DESC);
+
     INSERT OR IGNORE INTO schema_migrations (version, applied_at)
       VALUES (${PERSISTENCE_SCHEMA_VERSION}, '${new Date().toISOString()}');
   `);
@@ -164,6 +238,28 @@ const toStoredRun = (row: RunRow): StoredAnalysisRun => ({
   reportId: row.report_id,
   persistedAt: row.persisted_at,
   strategyConfigId: row.strategy_config_id,
+});
+
+const toStoredMeanReversionEvaluation = (row: MeanReversionEvaluationRow): StoredMeanReversionEvaluation => ({
+  id: row.id,
+  strategyConfigId: row.strategy_config_id,
+  strategyId: row.strategy_id,
+  version: row.version,
+  instrument: row.instrument,
+  timeframe: row.timeframe,
+  evaluatedAt: row.evaluated_at,
+  referenceCandleTime: row.reference_candle_time,
+  referenceClose: row.reference_close,
+  signal: row.signal,
+  stopPrice: row.stop_price,
+  atr: row.atr,
+  smaFilterValue: row.sma_filter_value,
+  aboveSmaFilter: row.above_sma_filter === null ? null : Boolean(row.above_sma_filter),
+  riskPerTradePct: row.risk_per_trade_pct,
+  accountSize: row.account_size,
+  suggestedRiskAmount: row.suggested_risk_amount,
+  suggestedPositionSizeUnits: row.suggested_position_size_units,
+  persistedAt: row.persisted_at,
 });
 
 const toStrategyConfig = (row: StrategyConfigRow): StrategyConfig => ({
@@ -390,6 +486,72 @@ export class AnalysisRepository {
     }
 
     return { ...toStrategyConfig(target), status: 'active' };
+  }
+
+  /** Append-only, like `saveCompletedRun` — a live MR evaluation is a point-in-time record,
+   * never updated after the fact. */
+  public saveMeanReversionEvaluation(input: MeanReversionEvaluationInput): StoredMeanReversionEvaluation {
+    const persistedAt = new Date().toISOString();
+    this.database
+      .prepare(
+        `INSERT INTO mr_evaluations (
+          id, strategy_config_id, strategy_id, version, instrument, timeframe, evaluated_at,
+          reference_candle_time, reference_close, signal, stop_price, atr, sma_filter_value,
+          above_sma_filter, risk_per_trade_pct, account_size, suggested_risk_amount,
+          suggested_position_size_units, persisted_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        input.id,
+        input.strategyConfigId,
+        input.strategyId,
+        input.version,
+        input.instrument,
+        input.timeframe,
+        input.evaluatedAt,
+        input.referenceCandleTime,
+        input.referenceClose,
+        input.signal,
+        input.stopPrice,
+        input.atr,
+        input.smaFilterValue,
+        input.aboveSmaFilter === null ? null : Number(input.aboveSmaFilter),
+        input.riskPerTradePct,
+        input.accountSize,
+        input.suggestedRiskAmount,
+        input.suggestedPositionSizeUnits,
+        persistedAt,
+      );
+
+    return { ...input, persistedAt };
+  }
+
+  /** Latest evaluation per strategy config, newest first — the dashboard panel's "current
+   * signal per active MR strategy" view. */
+  public listLatestMeanReversionEvaluations(): StoredMeanReversionEvaluation[] {
+    const rows = this.database
+      .prepare(
+        `SELECT mr.* FROM mr_evaluations AS mr
+         INNER JOIN (
+           SELECT strategy_config_id, MAX(evaluated_at) AS max_evaluated_at
+           FROM mr_evaluations
+           GROUP BY strategy_config_id
+         ) AS latest
+           ON latest.strategy_config_id = mr.strategy_config_id
+          AND latest.max_evaluated_at = mr.evaluated_at
+         ORDER BY mr.evaluated_at DESC`,
+      )
+      .all() as MeanReversionEvaluationRow[];
+    return rows.map(toStoredMeanReversionEvaluation);
+  }
+
+  public listMeanReversionEvaluations(strategyConfigId: string, limit = 50): StoredMeanReversionEvaluation[] {
+    if (!Number.isInteger(limit) || limit < 1)
+      throw new Error('Evaluation history limit must be a positive integer.');
+    const rows = this.database
+      .prepare('SELECT * FROM mr_evaluations WHERE strategy_config_id = ? ORDER BY evaluated_at DESC LIMIT ?')
+      .all(strategyConfigId, limit) as MeanReversionEvaluationRow[];
+    return rows.map(toStoredMeanReversionEvaluation);
   }
 
   public close() {

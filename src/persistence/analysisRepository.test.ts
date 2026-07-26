@@ -242,3 +242,61 @@ describe('AnalysisRepository strategy configs', () => {
     repository.close();
   });
 });
+
+const mrEvaluationInput = (strategyConfigId: string, overrides: Partial<Parameters<AnalysisRepository['saveMeanReversionEvaluation']>[0]> = {}) => ({
+  id: `eval-${overrides.evaluatedAt ?? '1'}`,
+  strategyConfigId,
+  strategyId: 'strategy-mr',
+  version: 1,
+  instrument: 'NAS100_USD',
+  timeframe: 'D' as const,
+  evaluatedAt: '2026-07-21T21:01:00.000Z',
+  referenceCandleTime: '2026-07-21T21:00:00.000Z',
+  referenceClose: 100,
+  signal: 'FLAT' as const,
+  stopPrice: null,
+  atr: null,
+  smaFilterValue: null,
+  aboveSmaFilter: null,
+  riskPerTradePct: 0.73,
+  accountSize: null,
+  suggestedRiskAmount: null,
+  suggestedPositionSizeUnits: null,
+  ...overrides,
+});
+
+describe('AnalysisRepository mean-reversion evaluations', () => {
+  it('persists an immutable evaluation record and reads it back unchanged', () => {
+    const repository = createRepository();
+    const strategy = repository.saveStrategyConfig('strategy-mr', 1, { name: 'MR', parameters: strategyParameters({ strategyKind: 'double7' }) });
+    const stored = repository.saveMeanReversionEvaluation(mrEvaluationInput(strategy.id, { signal: 'ENTER', stopPrice: 95, atr: 2.5 }));
+
+    expect(stored.signal).toBe('ENTER');
+    expect(stored.stopPrice).toBe(95);
+    expect(repository.listMeanReversionEvaluations(strategy.id)).toEqual([stored]);
+    repository.close();
+  });
+
+  it('lists only the latest evaluation per strategy config', () => {
+    const repository = createRepository();
+    const strategy = repository.saveStrategyConfig('strategy-mr', 1, { name: 'MR', parameters: strategyParameters({ strategyKind: 'double7' }) });
+    repository.saveMeanReversionEvaluation(mrEvaluationInput(strategy.id, { id: 'eval-older', evaluatedAt: '2026-07-20T21:01:00.000Z', signal: 'FLAT' }));
+    const latest = repository.saveMeanReversionEvaluation(mrEvaluationInput(strategy.id, { id: 'eval-newer', evaluatedAt: '2026-07-21T21:01:00.000Z', signal: 'ENTER' }));
+
+    const results = repository.listLatestMeanReversionEvaluations();
+    expect(results).toHaveLength(1);
+    expect(results[0]).toEqual(latest);
+    repository.close();
+  });
+
+  it('round-trips a boolean aboveSmaFilter through the SQLite integer column', () => {
+    const repository = createRepository();
+    const strategy = repository.saveStrategyConfig('strategy-mr', 1, { name: 'MR', parameters: strategyParameters({ strategyKind: 'double7' }) });
+    const above = repository.saveMeanReversionEvaluation(mrEvaluationInput(strategy.id, { id: 'eval-above', aboveSmaFilter: true }));
+    const below = repository.saveMeanReversionEvaluation(mrEvaluationInput(strategy.id, { id: 'eval-below', evaluatedAt: '2026-07-22T21:01:00.000Z', aboveSmaFilter: false }));
+
+    expect(above.aboveSmaFilter).toBe(true);
+    expect(below.aboveSmaFilter).toBe(false);
+    repository.close();
+  });
+});
