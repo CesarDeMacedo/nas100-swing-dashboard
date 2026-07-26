@@ -29,18 +29,20 @@ const display = (value: number | null, unavailable = 'Not available') => value =
 const targets = (values: number[]) => values.length ? values.map((value) => value.toFixed(2)).join(', ') : 'Not calculated';
 const actionLabel = (value: string) => value.replaceAll('_', ' ');
 
+const strategyLabel = (run: AnalysisHistoryItem['run']) => (run.strategyName ? `${run.strategyName} v${run.strategyVersion}` : 'Default parameters');
+
 function HistoryRow({ item, selected, onSelect }: { item: AnalysisHistoryItem; selected: boolean; onSelect: () => void }) {
   const report = item.report;
   return (
     <button className={`history-row${selected ? ' history-row--selected' : ''}`} type="button" onClick={onSelect}>
       <strong>{actionLabel(report?.action ?? item.run.status)}</strong>
       <span>{report?.direction ?? 'No direction'} | Score {report?.score ?? 'Not available'} | Grade {report?.grade ?? 'Not available'}</span>
-      <small>{item.run.completedAt} | {report?.sourceCandleTime ?? 'Source candle unavailable'} | {item.run.status} | {report?.isActionable ? 'Actionable analysis' : 'Non-actionable analysis'}</small>
+      <small>{item.run.completedAt} | {report?.sourceCandleTime ?? 'Source candle unavailable'} | {item.run.status} | {report?.isActionable ? 'Actionable analysis' : 'Non-actionable analysis'} | {strategyLabel(item.run)}</small>
     </button>
   );
 }
 
-function Detail({ report, onViewInDashboard }: { report: ImmutableReportDetail; onViewInDashboard?: (snapshot: SavedOandaDisplaySnapshot) => void }) {
+function Detail({ report, run, onViewInDashboard }: { report: ImmutableReportDetail; run?: AnalysisHistoryItem['run']; onViewInDashboard?: (snapshot: SavedOandaDisplaySnapshot) => void }) {
   const snapshot = report.displaySnapshot;
   return (
     <section className="history-detail" aria-label="Stored analysis detail">
@@ -51,6 +53,7 @@ function Detail({ report, onViewInDashboard }: { report: ImmutableReportDetail; 
         <div><dt>Stop</dt><dd>{display(report.stopPrice, 'Not calculated')}</dd></div>
         <div><dt>Targets</dt><dd>{targets(report.targets)}</dd></div>
         <div><dt>R:R</dt><dd>{display(report.estimatedRewardRisk)}</dd></div>
+        {run ? <div><dt>Strategy</dt><dd>{strategyLabel(run)}</dd></div> : null}
       </dl>
       {snapshot && onViewInDashboard ? <button type="button" onClick={() => onViewInDashboard(snapshot)}>View in dashboard</button> : null}
       {!snapshot ? <p>This record predates dashboard snapshots.</p> : null}
@@ -110,7 +113,7 @@ export function AnalysisHistoryPanel({ open, history, detail, selectedRunKey, on
           {history?.kind === 'succeeded' ? <div className="history-list">{filteredRuns.map((item) => <HistoryRow key={item.run.runKey} item={item} selected={selectedRunKey === item.run.runKey} onSelect={() => onSelect(item.run.runKey)} />)}</div> : null}
           {detail?.kind === 'loading' ? <p>Loading stored analysis...</p> : null}
           {detail?.kind === 'failed' || detail?.kind === 'malformed_response' ? <p>{detail.message}</p> : null}
-          {detail?.kind === 'succeeded' ? <Detail report={detail.report} onViewInDashboard={onViewInDashboard} /> : null}
+          {detail?.kind === 'succeeded' ? <Detail report={detail.report} run={detail.item.run} onViewInDashboard={onViewInDashboard} /> : null}
         </div>
       </aside>
     </div>

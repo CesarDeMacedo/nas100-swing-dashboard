@@ -12,6 +12,8 @@ type DashboardHeaderProps = Pick<Analysis, 'displayName' | 'instrument' | 'timef
   manualRunResult?: ManualRunResult | null;
   onManualRun?: () => void;
   onOpenHistory?: () => void;
+  onOpenStrategies?: () => void;
+  onOpenBacktests?: () => void;
   savedOandaProvenance?: string | null;
   savedSourceCandleTime?: string | null;
   onReturnToMock?: () => void;
@@ -24,7 +26,7 @@ type DashboardHeaderProps = Pick<Analysis, 'displayName' | 'instrument' | 'timef
   onRunOandaNow?: () => void;
 };
 
-export function DashboardHeader({ displayName, instrument, timeframe, serviceAvailability, manualRunState, manualRunResult, onManualRun, onOpenHistory, savedOandaProvenance, savedSourceCandleTime, onReturnToMock, onOpenOandaPreview, liveObservationStatus, liveObservationPrice, oandaStatus, oandaManualRunState, oandaManualRunResult, onRunOandaNow }: DashboardHeaderProps) {
+export function DashboardHeader({ displayName, instrument, timeframe, serviceAvailability, manualRunState, manualRunResult, onManualRun, onOpenHistory, onOpenStrategies, onOpenBacktests, savedOandaProvenance, savedSourceCandleTime, onReturnToMock, onOpenOandaPreview, liveObservationStatus, liveObservationPrice, oandaStatus, oandaManualRunState, oandaManualRunResult, onRunOandaNow }: DashboardHeaderProps) {
   const oandaConfigured = typeof oandaStatus === 'object' && oandaStatus.kind === 'configured';
   const titleTimeframe = formatTimeframeLabel(timeframe);
 
@@ -41,6 +43,10 @@ export function DashboardHeader({ displayName, instrument, timeframe, serviceAva
       </p>
       </div>
       <div className="dashboard-header__actions">
+        <div className="saved-oanda-actions">
+          {onOpenStrategies ? <button type="button" className="header-action-button" onClick={onOpenStrategies}>Strategies</button> : null}
+          {onOpenBacktests ? <button type="button" className="header-action-button" onClick={onOpenBacktests}>Backtests</button> : null}
+        </div>
         {savedOandaProvenance ? (
           <div className="saved-oanda-actions">
             {onOpenHistory ? <button type="button" className="header-action-button" onClick={onOpenHistory}>Analysis history</button> : null}

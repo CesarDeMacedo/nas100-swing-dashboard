@@ -161,9 +161,9 @@ Phase 8C implemented `src/application/buildSwingReport.ts`. It creates a version
 
 ## Phase 9: Local scheduler
 
-Local scheduler foundation is implemented. `src/service/scheduler/torontoSchedule.ts` identifies the approved `America/Toronto` slots and `fixtureScheduler.ts` evaluates them every 15 seconds while the Node service runs. It triggers Monday-Friday at 13:01 and Sunday-Friday at 21:01 only, tracks each in-memory Toronto slot once, and delegates to the shared fixture-run path. The runner requires a valid completed synthetic H4 candle, records blocked runs without a report when completion is absent, and relies on SQLite run-key uniqueness after service restarts. Health exposes concise scheduler status. Set `NAS100_DASHBOARD_SCHEDULER_ENABLED=false` to disable it; notifications, live providers, browser polling, and dashboard history changes remain deferred.
+Local scheduler foundation is implemented. `src/service/scheduler/torontoSchedule.ts` identifies the approved `America/Toronto` slots and `fixtureScheduler.ts` evaluates them every 15 seconds while the Node service runs. It triggers six times daily, once per H4 close (01:01, 05:01, 09:01, 13:01, 17:01, 21:01 — the four non-original slots Monday-Friday, 21:01 Sunday-Friday, see ADR-012), tracks each in-memory Toronto slot once, and delegates to the shared fixture-run path. The runner requires a valid completed synthetic H4 candle, records blocked runs without a report when completion is absent, and relies on SQLite run-key uniqueness after service restarts. Health exposes concise scheduler status. Set `NAS100_DASHBOARD_SCHEDULER_ENABLED=false` to disable it; notifications, live providers, browser polling, and dashboard history changes remain deferred.
 
-- Objective: run mock analysis at 13:01 and 21:01 `America/Toronto` after expected H4 closes without duplicates.
+- Objective: run mock analysis at all six scheduled `America/Toronto` slots after each expected H4 close without duplicates.
 - Scope: service scheduler, manual trigger, idempotency, run logging, and UI update event.
 - Likely files: `apps/service/src/scheduler/`, service routes, integration tests.
 - Dependencies: Phase 6 and a local service from Phase 0.

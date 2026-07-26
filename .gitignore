@@ -11,3 +11,4 @@ screenshots/
 *.sqlite
 *.sqlite-shm
 *.sqlite-wal
+scripts/backtest/.cache/

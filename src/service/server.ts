@@ -1,9 +1,13 @@
+import { randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { resolve } from 'node:path';
+
+import { ZodError } from 'zod';
 
 import { AnalysisRepository, defaultPersistencePath, type StoredAnalysisRun } from '../persistence/analysisRepository';
 import { oandaConfigurationStatus, parseOandaConfiguration } from '../providers/oanda/config';
 import { OandaProvider, findNas100CandidatesFromInstruments } from '../providers/oanda/oandaProvider';
+import { StrategyConfigInputSchema, type StrategyStatus } from '../schemas/strategyConfig';
 import { runSyntheticFixtureAnalysis } from './fixtureRun';
 import { LiveH4Stream } from './liveH4Stream';
 import { executeManualOandaAnalysis, runManualOandaAnalysis } from './oandaRun';
@@ -11,6 +15,8 @@ import { executeScheduledOandaAnalysis } from './scheduledOandaRun';
 import { FixtureScheduler, type SchedulerRunResult, type SchedulerStatus } from './scheduler/fixtureScheduler';
 import { notifySchedulerOutcome } from './schedulerNotifications';
 import { parseSchedulerEnabled, parseSchedulerProvider } from './scheduler/torontoSchedule';
+import { BacktestRepository, defaultBacktestDatabasePath } from '../../scripts/backtest/backtestRepository';
+import { buildBacktestReport } from '../../scripts/backtest/backtestReport';
 
 export const LOCAL_SERVICE_HOST = '127.0.0.1';
 export const DEFAULT_SERVICE_PORT = 4310;
@@ -27,6 +33,7 @@ export const loadProjectEnvironmentForServiceCli = (envPath = resolve(process.cw
 
 type LocalServiceOptions = {
   databasePath?: string;
+  backtestDatabasePath?: string;
   port?: number;
   schedulerEnabled?: boolean;
   schedulerIntervalMs?: number;
@@ -76,6 +83,25 @@ const json = (response: ServerResponse, statusCode: number, payload: unknown) =>
 const error = (response: ServerResponse, statusCode: number, code: string, message: string) =>
   json(response, statusCode, { error: { code, message } });
 
+/** Denormalizes the strategy name+version onto a persisted run's response, so the Analysis
+ * History UI can show "which strategy produced this run" without a second client-side fetch —
+ * the same spirit as `report_json` already embedding everything a report view needs. A run
+ * with no `strategyConfigId` (the default-parameters case) or one whose strategy has since
+ * been deleted just omits the fields. */
+const withStrategyLabel = <T extends { run: StoredAnalysisRun }>(repository: AnalysisRepository, item: T) => {
+  const strategyConfigId = item.run.strategyConfigId;
+  const strategy = strategyConfigId ? repository.getStrategyConfigById(strategyConfigId) : null;
+  return { ...item, run: { ...item.run, strategyName: strategy?.name ?? null, strategyVersion: strategy?.version ?? null } };
+};
+
+const readJsonBody = async (request: IncomingMessage): Promise<unknown> => {
+  const chunks: Buffer[] = [];
+  for await (const chunk of request) chunks.push(chunk as Buffer);
+  const raw = Buffer.concat(chunks).toString('utf-8');
+  if (!raw) return undefined;
+  return JSON.parse(raw);
+};
+
 const summary = (run: StoredAnalysisRun, report: NonNullable<ReturnType<typeof runSyntheticFixtureAnalysis>['report']>, alreadyExists: boolean) => ({
   id: run.id,
   runKey: run.runKey,
@@ -111,6 +137,7 @@ const resolvePort = (value: string | undefined) => {
 
 export function createLocalService(options: LocalServiceOptions = {}): LocalService {
   const databasePath = options.databasePath ?? process.env.NAS100_DASHBOARD_DB_PATH ?? defaultPersistencePath();
+  const backtestDatabasePath = options.backtestDatabasePath ?? process.env.NAS100_BACKTEST_DB_PATH ?? defaultBacktestDatabasePath();
   const configuredPort = options.port ?? resolvePort(process.env.NAS100_DASHBOARD_PORT);
   const schedulerEnabled = options.schedulerEnabled ?? parseSchedulerEnabled(process.env.NAS100_DASHBOARD_SCHEDULER_ENABLED);
   const schedulerProvider = options.schedulerProvider ?? parseSchedulerProvider(process.env.NAS100_DASHBOARD_SCHEDULER_PROVIDER);
@@ -129,6 +156,7 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
       })
     : null;
   let repository: AnalysisRepository | null = null;
+  let backtestRepository: BacktestRepository | null = null;
   let server: Server | null = null;
   let boundPort = configuredPort;
   const scheduler = new FixtureScheduler({
@@ -302,7 +330,7 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
           error(response, 400, 'INVALID_LIMIT', 'limit must be an integer between 1 and 100.');
           return;
         }
-        json(response, 200, { runs: activeRepository.listHistory(limit) });
+        json(response, 200, { runs: activeRepository.listHistory(limit).map((item) => withStrategyLabel(activeRepository, item)) });
         return;
       }
 
@@ -317,7 +345,99 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
           error(response, 404, 'RUN_NOT_FOUND', 'No persisted run matches this key.');
           return;
         }
-        json(response, 200, item);
+        json(response, 200, withStrategyLabel(activeRepository, item));
+        return;
+      }
+
+      if (request.method === 'GET' && url.pathname === '/strategies') {
+        const status = url.searchParams.get('status');
+        if (status !== null && !['draft', 'active', 'archived'].includes(status)) {
+          error(response, 400, 'INVALID_STATUS', 'status must be draft, active, or archived.');
+          return;
+        }
+        json(response, 200, { strategies: activeRepository.listStrategies((status as StrategyStatus | null) ?? undefined) });
+        return;
+      }
+
+      if (request.method === 'POST' && url.pathname === '/strategies') {
+        try {
+          const body = StrategyConfigInputSchema.parse(await readJsonBody(request));
+          const created = activeRepository.saveStrategyConfig(randomUUID(), 1, body);
+          json(response, 201, created);
+        } catch (cause) {
+          if (cause instanceof ZodError) {
+            error(response, 422, 'STRATEGY_VALIDATION_FAILED', cause.issues.map((issue) => issue.message).join('; '));
+            return;
+          }
+          error(response, 400, 'INVALID_REQUEST_BODY', cause instanceof Error ? cause.message : 'Invalid request body.');
+        }
+        return;
+      }
+
+      const activateMatch = request.method === 'POST' ? url.pathname.match(/^\/strategies\/([^/]+)\/versions\/(\d+)\/activate$/) : null;
+      if (activateMatch) {
+        const [, strategyId, versionText] = activateMatch;
+        try {
+          json(response, 200, activeRepository.activateStrategyVersion(strategyId!, Number(versionText)));
+        } catch (cause) {
+          const message = cause instanceof Error ? cause.message : 'Could not activate strategy version.';
+          const notFound = message.includes('does not exist');
+          error(response, notFound ? 404 : 409, notFound ? 'STRATEGY_NOT_FOUND' : 'STRATEGY_VERSION_NOT_DRAFT', message);
+        }
+        return;
+      }
+
+      const versionsMatch = request.method === 'POST' ? url.pathname.match(/^\/strategies\/([^/]+)\/versions$/) : null;
+      if (versionsMatch) {
+        const [, strategyId] = versionsMatch;
+        try {
+          const body = StrategyConfigInputSchema.parse(await readJsonBody(request));
+          const version = activeRepository.getNextStrategyVersion(strategyId!);
+          json(response, 201, activeRepository.saveStrategyConfig(strategyId!, version, body));
+        } catch (cause) {
+          if (cause instanceof ZodError) {
+            error(response, 422, 'STRATEGY_VALIDATION_FAILED', cause.issues.map((issue) => issue.message).join('; '));
+            return;
+          }
+          error(response, 400, 'INVALID_REQUEST_BODY', cause instanceof Error ? cause.message : 'Invalid request body.');
+        }
+        return;
+      }
+
+      const strategyMatch = request.method === 'GET' ? url.pathname.match(/^\/strategies\/([^/]+)$/) : null;
+      if (strategyMatch) {
+        const [, strategyId] = strategyMatch;
+        const versions = activeRepository.getStrategyVersions(strategyId!);
+        if (versions.length === 0) {
+          error(response, 404, 'STRATEGY_NOT_FOUND', 'No strategy matches this id.');
+          return;
+        }
+        json(response, 200, { strategyId, versions });
+        return;
+      }
+
+      if (request.method === 'GET' && url.pathname === '/backtests') {
+        if (!backtestRepository) {
+          error(response, 503, 'BACKTEST_PERSISTENCE_UNAVAILABLE', 'Backtest results are unavailable.');
+          return;
+        }
+        json(response, 200, { backtests: backtestRepository.listRuns(url.searchParams.get('strategyConfigId') ?? undefined) });
+        return;
+      }
+
+      const backtestMatch = request.method === 'GET' ? url.pathname.match(/^\/backtests\/([^/]+)$/) : null;
+      if (backtestMatch) {
+        if (!backtestRepository) {
+          error(response, 503, 'BACKTEST_PERSISTENCE_UNAVAILABLE', 'Backtest results are unavailable.');
+          return;
+        }
+        const [, runId] = backtestMatch;
+        const report = buildBacktestReport(backtestRepository, runId!);
+        if (!report) {
+          error(response, 404, 'BACKTEST_NOT_FOUND', 'No backtest run matches this id.');
+          return;
+        }
+        json(response, 200, report);
         return;
       }
 
@@ -341,6 +461,15 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
         }
         try {
           repository = new AnalysisRepository(databasePath);
+          // Best-effort, non-fatal: the backtest harness is an isolated CLI tool (see
+          // scripts/backtest/) and its SQLite file may not exist yet if no backtest has ever
+          // been run. Opening it here just creates an empty schema in that case — the
+          // /backtests* routes below simply return empty lists/404s until a backtest runs.
+          try {
+            backtestRepository = new BacktestRepository(backtestDatabasePath);
+          } catch {
+            backtestRepository = null;
+          }
           server = createServer(requestHandler);
           server.once('error', reject);
           server.listen(configuredPort, LOCAL_SERVICE_HOST, () => {
@@ -363,12 +492,16 @@ export function createLocalService(options: LocalServiceOptions = {}): LocalServ
         if (!activeServer) {
           repository?.close();
           repository = null;
+          backtestRepository?.close();
+          backtestRepository = null;
           resolve();
           return;
         }
         activeServer.close((cause) => {
           repository?.close();
           repository = null;
+          backtestRepository?.close();
+          backtestRepository = null;
           cause ? reject(cause) : resolve();
         });
       }),

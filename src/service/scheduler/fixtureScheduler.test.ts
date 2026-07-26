@@ -33,8 +33,37 @@ describe('Toronto schedule slots', () => {
   });
 
   it('uses Toronto daylight-saving offsets rather than computer local time', () => {
+    // 21:01, kept from the original coverage (falls on a Sunday, valid for that slot).
     expect(getTorontoScheduleSlot(new Date('2026-03-09T01:01:00.000Z'))?.key).toBe('2026-03-08:21:01');
     expect(getTorontoScheduleSlot(new Date('2026-11-02T02:01:00.000Z'))?.key).toBe('2026-11-01:21:01');
+
+    // Friday immediately before spring-forward (2026-03-06, still EST) — all 5 weekday slots.
+    expect(getTorontoScheduleSlot(new Date('2026-03-06T06:01:00.000Z'))?.key).toBe('2026-03-06:01:01');
+    expect(getTorontoScheduleSlot(new Date('2026-03-06T10:01:00.000Z'))?.key).toBe('2026-03-06:05:01');
+    expect(getTorontoScheduleSlot(new Date('2026-03-06T14:01:00.000Z'))?.key).toBe('2026-03-06:09:01');
+    expect(getTorontoScheduleSlot(new Date('2026-03-06T18:01:00.000Z'))?.key).toBe('2026-03-06:13:01');
+    expect(getTorontoScheduleSlot(new Date('2026-03-06T22:01:00.000Z'))?.key).toBe('2026-03-06:17:01');
+
+    // Monday immediately after spring-forward (2026-03-09, now EDT).
+    expect(getTorontoScheduleSlot(new Date('2026-03-09T05:01:00.000Z'))?.key).toBe('2026-03-09:01:01');
+    expect(getTorontoScheduleSlot(new Date('2026-03-09T09:01:00.000Z'))?.key).toBe('2026-03-09:05:01');
+    expect(getTorontoScheduleSlot(new Date('2026-03-09T13:01:00.000Z'))?.key).toBe('2026-03-09:09:01');
+    expect(getTorontoScheduleSlot(new Date('2026-03-09T17:01:00.000Z'))?.key).toBe('2026-03-09:13:01');
+    expect(getTorontoScheduleSlot(new Date('2026-03-09T21:01:00.000Z'))?.key).toBe('2026-03-09:17:01');
+
+    // Friday immediately before fall-back (2026-10-30, still EDT).
+    expect(getTorontoScheduleSlot(new Date('2026-10-30T05:01:00.000Z'))?.key).toBe('2026-10-30:01:01');
+    expect(getTorontoScheduleSlot(new Date('2026-10-30T09:01:00.000Z'))?.key).toBe('2026-10-30:05:01');
+    expect(getTorontoScheduleSlot(new Date('2026-10-30T13:01:00.000Z'))?.key).toBe('2026-10-30:09:01');
+    expect(getTorontoScheduleSlot(new Date('2026-10-30T17:01:00.000Z'))?.key).toBe('2026-10-30:13:01');
+    expect(getTorontoScheduleSlot(new Date('2026-10-30T21:01:00.000Z'))?.key).toBe('2026-10-30:17:01');
+
+    // Monday immediately after fall-back (2026-11-02, now EST).
+    expect(getTorontoScheduleSlot(new Date('2026-11-02T06:01:00.000Z'))?.key).toBe('2026-11-02:01:01');
+    expect(getTorontoScheduleSlot(new Date('2026-11-02T10:01:00.000Z'))?.key).toBe('2026-11-02:05:01');
+    expect(getTorontoScheduleSlot(new Date('2026-11-02T14:01:00.000Z'))?.key).toBe('2026-11-02:09:01');
+    expect(getTorontoScheduleSlot(new Date('2026-11-02T18:01:00.000Z'))?.key).toBe('2026-11-02:13:01');
+    expect(getTorontoScheduleSlot(new Date('2026-11-02T22:01:00.000Z'))?.key).toBe('2026-11-02:17:01');
   });
 
   it('parses scheduler configuration safely', () => {

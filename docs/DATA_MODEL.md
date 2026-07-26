@@ -107,6 +107,10 @@ The prepared categories are trend, structure, momentum, location, cross-market, 
 
 Settings include version, `America/Toronto`, `H4`, scheduled review times, minimum reward-to-risk, stale threshold, preferred instrument, notification flag, and optional export directory. Minimum reward-to-risk cannot be below 2.0. Scheduling is implemented (fixture and OANDA modes); scheduler-outcome notifications are implemented via `node-notifier` but are unconditional, not yet wired to this settings schema's notification flag.
 
+### StrategyConfig (`src/schemas/strategyConfig.ts`)
+
+Added for ADR-017. `StrategyParametersSchema` validates the full parameter surface a strategy controls: `minRewardRisk` (`>= 2.0`, a floor enforced here — not just in the UI), `premiumScoreThreshold`, four ATR geometry buffers (`atrLocationTolerance`, `atrTriggerBuffer`, `atrStopBuffer`, `atrInvalidationBuffer`), `crossMarketPrimaryInstruments` (which of `us500`/`us30`/`russell2000` block entry on contradiction), `setupScoreWeights` (eight category weights, validated by a `.refine()` to sum to exactly 100), and an `eventRisk` sub-object (`blockingWindowMinutes`, `minImpact`) that is schema-only today — no pipeline code reads it yet (see ADR-017's backtest scope note). `StrategyConfigSchema` wraps a set of parameters with `id`, `strategyId`, `version`, `name`, `status` (`draft`/`active`/`archived`), and `createdAt`; `StrategyConfigInputSchema` is the create/update-request shape (`name` + `parameters` only). These are persistence-layer contracts (validated by `AnalysisRepository.saveStrategyConfig`), not part of the `AnalysisReport`/`CandleDataset` browser-first contract described above — a persisted run instead carries an optional `strategyConfigId` foreign key (`analysis_runs.strategy_config_id`) pointing at the exact immutable version that produced it.
+
 ## Validation pipeline
 
 ```text

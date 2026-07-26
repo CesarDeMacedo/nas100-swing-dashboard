@@ -71,4 +71,62 @@ describe('localAnalysisService', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status: 200 })));
     await expect(createLocalAnalysisServiceClient('http://service').listRecentRuns(10)).resolves.toMatchObject({ kind: 'malformed_response' });
   });
+
+  const strategyParameters = () => ({
+    minRewardRisk: 2,
+    premiumScoreThreshold: 70,
+    atrLocationTolerance: 0.35,
+    atrTriggerBuffer: 0.05,
+    atrStopBuffer: 0.25,
+    atrInvalidationBuffer: 0.1,
+    crossMarketPrimaryInstruments: ['us500', 'us30'] as ('us500' | 'us30' | 'russell2000')[],
+    setupScoreWeights: { trend: 20, structure: 20, momentum: 15, location: 15, crossMarket: 10, eventRisk: 5, rewardRisk: 10, patienceReadiness: 5 },
+    eventRisk: { blockingWindowMinutes: 60, minImpact: 'High' as const },
+  });
+  const strategy = { id: 'strategy-1:1', strategyId: 'strategy-1', version: 1, name: 'Baseline', status: 'draft' as const, parameters: strategyParameters(), createdAt: '2026-07-22T00:00:00.000Z' };
+
+  it('creates a strategy and surfaces the 422 min-R:R validation failure distinctly from other errors', async () => {
+    const client = createLocalAnalysisServiceClient('http://service');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(strategy), { status: 201 })));
+    await expect(client.createStrategy?.('Baseline', strategyParameters())).resolves.toMatchObject({ kind: 'succeeded', strategy });
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: { code: 'STRATEGY_VALIDATION_FAILED', message: 'minRewardRisk must be >= 2.0' } }), { status: 422 })));
+    await expect(client.createStrategy?.('Too tight', strategyParameters())).resolves.toMatchObject({ kind: 'validation_failed', message: 'minRewardRisk must be >= 2.0' });
+  });
+
+  it('lists strategies and fetches one strategy with all its versions', async () => {
+    const client = createLocalAnalysisServiceClient('http://service');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ strategies: [strategy] }), { status: 200 })));
+    await expect(client.listStrategies?.()).resolves.toMatchObject({ kind: 'succeeded', strategies: [strategy] });
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ strategyId: 'strategy-1', versions: [strategy] }), { status: 200 })));
+    await expect(client.getStrategy?.('strategy-1')).resolves.toMatchObject({ kind: 'succeeded', versions: [strategy] });
+  });
+
+  it('activates a strategy version and surfaces a 409 as a failure', async () => {
+    const client = createLocalAnalysisServiceClient('http://service');
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ ...strategy, status: 'active' }), { status: 200 })));
+    await expect(client.activateStrategyVersion?.('strategy-1', 1)).resolves.toMatchObject({ kind: 'succeeded', strategy: { status: 'active' } });
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: { code: 'STRATEGY_VERSION_NOT_DRAFT', message: 'not a draft' } }), { status: 409 })));
+    await expect(client.activateStrategyVersion?.('strategy-1', 1)).resolves.toMatchObject({ kind: 'failed', message: 'not a draft' });
+  });
+
+  it('lists backtests and distinguishes a 404 report as not_found', async () => {
+    const client = createLocalAnalysisServiceClient('http://service');
+    const backtestRun = { id: 'run-1', strategyConfigId: 'strategy-1:1', instrument: 'NAS100_USD', rangeStart: '2026-01-01', rangeEnd: '2026-02-01', status: 'completed' as const, startedAt: 't1', completedAt: 't2', frameCount: 500, errorMessage: null };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ backtests: [backtestRun] }), { status: 200 })));
+    await expect(client.listBacktests?.()).resolves.toMatchObject({ kind: 'succeeded', backtests: [backtestRun] });
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: { code: 'BACKTEST_NOT_FOUND', message: 'not found' } }), { status: 404 })));
+    await expect(client.getBacktest?.('missing')).resolves.toEqual({ kind: 'not_found' });
+  });
+
+  it('loads a full backtest report', async () => {
+    const client = createLocalAnalysisServiceClient('http://service');
+    const backtestRun = { id: 'run-1', strategyConfigId: 'strategy-1:1', instrument: 'NAS100_USD', rangeStart: '2026-01-01', rangeEnd: '2026-02-01', status: 'completed' as const, startedAt: 't1', completedAt: 't2', frameCount: 500, errorMessage: null };
+    const report = { run: backtestRun, summary: { signalCount: 1, filledCount: 1, cancelledCount: 0, winCount: 1, lossCount: 0, unresolvedCount: 0, winRate: 1, avgRewardRisk: 2, avgWinRewardRisk: 2, expectancy: 2 }, breakdownByHour: [], breakdownByWeekday: [], signals: [] };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify(report), { status: 200 })));
+    await expect(client.getBacktest?.('run-1')).resolves.toMatchObject({ kind: 'succeeded', report });
+  });
 });

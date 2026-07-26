@@ -92,6 +92,29 @@ describe('OANDA read-only provider', () => {
     expect(result).toMatchObject({ timeframe: 'D', candles: [{ timeframe: 'D', isClosed: true }] });
   });
 
+  it('requests a from/to bounded range without a count param, for historical backfill', async () => {
+    let requestUrl = '';
+    const fetcher: typeof fetch = async (input) => {
+      requestUrl = input instanceof URL ? input.toString() : typeof input === 'string' ? input : input.url;
+      return new Response(JSON.stringify({ candles: [{ time: '2026-07-21T21:00:00.000Z', complete: true, mid: { o: '29000', h: '29040', l: '28980', c: '29020' } }] }), { status: 200 });
+    };
+    const provider = new OandaProvider(configured(), fetcher);
+    const result = await provider.getCandlesInRange('NAS100_USD', 'H4', '2026-01-01T00:00:00Z', '2026-07-21T21:00:00Z');
+    const url = new URL(requestUrl);
+
+    expect(url.searchParams.get('granularity')).toBe('H4');
+    expect(url.searchParams.get('price')).toBe('M');
+    expect(url.searchParams.get('from')).toBe('2026-01-01T00:00:00Z');
+    expect(url.searchParams.get('to')).toBe('2026-07-21T21:00:00Z');
+    expect(url.searchParams.has('count')).toBe(false);
+    expect(result.candles[0]).toMatchObject({ isClosed: true, close: 29020 });
+  });
+
+  it('rejects an invalid from/to range for historical backfill', async () => {
+    const provider = new OandaProvider(configured(), vi.fn());
+    await expect(provider.getCandlesInRange('NAS100_USD', 'H4', 'not-a-date', '2026-07-21T21:00:00Z')).rejects.toThrow('from/to must be valid ISO-8601 timestamps.');
+  });
+
   it('opens the configured server-side pricing stream with GET and no exposed payload', async () => {
     let requestUrl = '';
     let requestInit: RequestInit | undefined;

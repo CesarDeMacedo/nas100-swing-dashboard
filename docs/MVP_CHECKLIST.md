@@ -15,6 +15,19 @@
 - [ ] An event-risk data source is wired, but only as a validation spike (unofficial Forex Factory feed, A2) — not a resolved production provider. Entry authorization remains hard-blocked regardless (see below).
 - [x] A dedicated regression test proves the OANDA pipeline's entry-authorization clamp actually holds back a real computed BUY, not just a hypothetical one — verified by temporarily bypassing the clamp and confirming the test fails (`src/service/oandaRun.test.ts`).
 
+## Configurable strategies and backtest harness (ADR-017)
+
+- [x] Trade-plan/patience-filter/strategy-decision/setup-score/scored-decision functions accept an optional resolved strategy-parameters argument, defaulting to today's exact hardcoded values (`src/domain/strategyParameters.ts`); proven byte-identical to omitting the argument by a dedicated equality test (`src/application/buildDashboardState.test.ts`), not just "existing tests still pass."
+- [x] Strategies are named, versioned, and immutable once `active` (`draft -> active -> archived`), persisted in `strategy_configs` (`src/persistence/analysisRepository.ts`).
+- [x] Minimum R:R >= 2.0 and Setup Score weights summing to exactly 100 are enforced by shared Zod validation at the single write path, proven by a test that calls `POST /strategies` directly (bypassing the UI) and asserts HTTP 422 (`src/service/server.strategies.test.ts`).
+- [x] A persisted run records which strategy/version produced it (`analysis_runs.strategy_config_id`), denormalized onto `GET /runs`/`GET /runs/:runKey` responses so Analysis History can show it without an extra client fetch.
+- [x] An isolated CLI backtest harness (`scripts/backtest/`) replays the real, unmodified decision pipeline against OANDA historical candles (H4 + Daily for NAS100, H4 for the three cross-market instruments), with a zero-lookahead guarantee proven by a dedicated test (`scripts/backtest/__tests__/replayWindow.noLookahead.test.ts`) rather than asserted by convention.
+- [x] Each hypothetical signal is walked forward through an explicit fill/outcome state machine (pending -> filled/cancelled -> win/loss/unresolved) with a documented, conservative same-candle tie-break rule (`scripts/backtest/signalOutcome.ts`, `signalOutcome.test.ts`).
+- [x] Backtest results (win rate, planned vs. realized R:R, expectancy, breakdown by hour/weekday) persist to a separate SQLite file from production and are served read-only by the running service (`GET /backtests`, `GET /backtests/:id`).
+- [x] New "Strategies" and "Backtests" dashboard pages (overlay panels, matching the existing Analysis History pattern) for managing strategy versions and viewing backtest results; a "Run backtest" control builds the CLI command rather than triggering it over HTTP, keeping the harness isolated from the production service.
+- [ ] No live or scheduled run selects a non-default strategy yet — the resolved-strategy pipeline is wired and tested, but only the backtest harness currently passes an explicit strategy. Wiring an `active` strategy into `runManualOandaAnalysis`/the scheduler is a follow-up.
+- [ ] Event-risk history is out of scope for this first backtest version; the replay always treats event-risk as clear (`eventRisk: []`). Historical event-risk replay is a follow-up, tracked in `docs/DECISIONS.md`.
+
 ## Foundation
 
 - [x] Phase 0: Browser-first TypeScript workspace and React/Vite app are created after approval; the deferred Node local service is intentionally not created.
@@ -40,7 +53,7 @@
 - [x] Phase 4: EMA, RSI, ATR, and insufficient-history behavior have known-value tests (`src/domain/indicators.test.ts`, `indicatorSnapshot.test.ts`).
 - [x] Phase 5: Daily regime and H4 structure classification return evidence and reason codes (`src/domain/dailyRegime.test.ts`, `h4Structure.test.ts`, `technicalContext.test.ts`).
 - [x] Phase 6: Completed-candle protection prevents BUY and SELL from an open H4 candle (`src/domain/patienceFilter.test.ts`, `strategyDecision.test.ts`, enforced again at the OANDA boundary in `src/service/oandaRun.test.ts`).
-- [x] Phase 6: Provider-confirmed closed status is required after each 13:01 and 21:01 `America/Toronto` scheduled run (open candles excluded end to end; see `src/service/oandaRun.test.ts`, `src/service/scheduler/fixtureScheduler.test.ts`).
+- [x] Phase 6: Provider-confirmed closed status is required after each of the six scheduled `America/Toronto` runs (01:01, 05:01, 09:01, 13:01, 17:01, 21:01) (open candles excluded end to end; see `src/service/oandaRun.test.ts`, `src/service/scheduler/fixtureScheduler.test.ts`).
 - [x] Phase 6: Stale market data defaults to NO TRADE (`src/domain/patienceFilter.test.ts`, `src/domain/analysis.test.ts`).
 - [x] Phase 6: Missing macro or event-risk data defaults to WAIT or NO TRADE (`src/domain/patienceFilter.test.ts`, `src/domain/strategyDecision.test.ts`).
 - [x] Phase 6: Patience Filter blocks action independently of Setup Score (`src/domain/patienceFilter.test.ts`, `scoredDecision.test.ts`).
@@ -55,7 +68,7 @@
 - [x] Phase 8: Position sizing remains explicitly illustrative and cannot execute a trade (no execution capability exists anywhere in the codebase; see ADR-008).
 - [x] Phase 9: Manual and scheduled runs share one analysis path (`src/service/server.ts` scheduler `run` callback calls the same `executeManualOandaAnalysis`/`runSyntheticFixtureAnalysis` used by the manual routes).
 - [x] Phase 9: Scheduled runs are deduplicated by completed candle and recorded (`src/service/scheduler/fixtureScheduler.test.ts`, run-key uniqueness in `src/persistence/analysisRepository.test.ts`).
-- [x] Phase 9: Priority runs occur at 13:01 and 21:01 `America/Toronto` (`src/service/scheduler/fixtureScheduler.test.ts`, including DST-boundary cases).
+- [x] Phase 9: Priority runs occur six times daily at 01:01, 05:01, 09:01, 13:01, 17:01, and 21:01 `America/Toronto` (`src/service/scheduler/fixtureScheduler.test.ts`, including DST-boundary cases).
 - [x] Phase 10: History is stored locally with immutable report JSON and queryable summaries. SQLite storage, the `GET /runs`/`GET /runs/:runKey` query API, and a client-side search/filter + adjustable record-count selector in `AnalysisHistoryPanel` are implemented and tested. A formal retention/back-up policy is not yet defined (tracked as a follow-up); run deletion/pruning is deliberately not implemented (would touch the immutable-records rule).
 - [x] Phase 10: SQLite migrations and restart persistence tests pass (`src/persistence/analysisRepository.test.ts`).
 

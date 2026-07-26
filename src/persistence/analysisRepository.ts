@@ -3,8 +3,9 @@ import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 
 import type { SwingReport } from '../application/buildSwingReport';
+import { StrategyConfigInputSchema, type StrategyConfig, type StrategyConfigInput, type StrategyParameters, type StrategyStatus } from '../schemas/strategyConfig';
 
-export const PERSISTENCE_SCHEMA_VERSION = 2;
+export const PERSISTENCE_SCHEMA_VERSION = 3;
 
 export type AnalysisRunStatus = 'COMPLETED' | 'BLOCKED' | 'FAILED';
 
@@ -20,6 +21,8 @@ export type AnalysisRunInput = {
   source: 'manual' | 'fixture';
   errorMessage?: string | null;
   triggeredBy?: AnalysisRunTrigger | null;
+  /** NULL means "default/unversioned parameters" — distinct from "unknown". */
+  strategyConfigId?: string | null;
 };
 
 export type StoredAnalysisRun = AnalysisRunInput & {
@@ -43,11 +46,24 @@ type RunRow = {
   report_id: string | null;
   persisted_at: string;
   triggered_by: AnalysisRunTrigger | null;
+  strategy_config_id: string | null;
 };
 
 type ReportRow = {
   id: string;
   report_json: string;
+};
+
+type StrategyConfigRow = {
+  id: string;
+  strategy_id: string;
+  version: number;
+  name: string;
+  status: StrategyStatus;
+  min_reward_risk: number;
+  premium_score_threshold: number;
+  config_json: string;
+  created_at: string;
 };
 
 const createSchema = (database: DatabaseSync) => {
@@ -104,6 +120,34 @@ const createSchema = (database: DatabaseSync) => {
 
   database.exec(`
     INSERT OR IGNORE INTO schema_migrations (version, applied_at)
+      VALUES (2, '${new Date().toISOString()}');
+
+    CREATE TABLE IF NOT EXISTS strategy_configs (
+      id TEXT PRIMARY KEY,
+      strategy_id TEXT NOT NULL,
+      version INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('draft', 'active', 'archived')),
+      min_reward_risk REAL NOT NULL CHECK (min_reward_risk >= 2.0),
+      premium_score_threshold REAL NOT NULL,
+      config_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      UNIQUE (strategy_id, version)
+    ) STRICT;
+
+    CREATE UNIQUE INDEX IF NOT EXISTS strategy_configs_one_active_idx
+      ON strategy_configs(strategy_id) WHERE status = 'active';
+  `);
+
+  const runColumns = database.prepare('PRAGMA table_info(analysis_runs)').all() as Array<{ name: string }>;
+  if (!runColumns.some((column) => column.name === 'strategy_config_id')) {
+    database.exec(`
+      ALTER TABLE analysis_runs ADD COLUMN strategy_config_id TEXT REFERENCES strategy_configs(id);
+    `);
+  }
+
+  database.exec(`
+    INSERT OR IGNORE INTO schema_migrations (version, applied_at)
       VALUES (${PERSISTENCE_SCHEMA_VERSION}, '${new Date().toISOString()}');
   `);
 };
@@ -119,6 +163,17 @@ const toStoredRun = (row: RunRow): StoredAnalysisRun => ({
   triggeredBy: row.triggered_by,
   reportId: row.report_id,
   persistedAt: row.persisted_at,
+  strategyConfigId: row.strategy_config_id,
+});
+
+const toStrategyConfig = (row: StrategyConfigRow): StrategyConfig => ({
+  id: row.id,
+  strategyId: row.strategy_id,
+  version: row.version,
+  name: row.name,
+  status: row.status,
+  parameters: JSON.parse(row.config_json) as StrategyParameters,
+  createdAt: row.created_at,
 });
 
 export const defaultPersistencePath = (localAppData = process.env.LOCALAPPDATA) => {
@@ -170,8 +225,8 @@ export class AnalysisRepository {
       this.database
         .prepare(
           `INSERT INTO analysis_runs (
-            id, run_key, started_at, completed_at, status, source, error_message, report_id, persisted_at, triggered_by
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            id, run_key, started_at, completed_at, status, source, error_message, report_id, persisted_at, triggered_by, strategy_config_id
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           run.id,
@@ -184,6 +239,7 @@ export class AnalysisRepository {
           reportId,
           persistedAt,
           run.triggeredBy ?? null,
+          run.strategyConfigId ?? null,
         );
       this.database.exec('COMMIT');
     } catch (error) {
@@ -195,6 +251,7 @@ export class AnalysisRepository {
       ...run,
       errorMessage: run.errorMessage ?? null,
       triggeredBy: run.triggeredBy ?? null,
+      strategyConfigId: run.strategyConfigId ?? null,
       reportId,
       persistedAt,
     };
@@ -209,8 +266,8 @@ export class AnalysisRepository {
     this.database
       .prepare(
         `INSERT INTO analysis_runs (
-          id, run_key, started_at, completed_at, status, source, error_message, report_id, persisted_at, triggered_by
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
+          id, run_key, started_at, completed_at, status, source, error_message, report_id, persisted_at, triggered_by, strategy_config_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`,
       )
       .run(
         run.id,
@@ -222,9 +279,10 @@ export class AnalysisRepository {
         run.errorMessage ?? null,
         persistedAt,
         run.triggeredBy ?? null,
+        run.strategyConfigId ?? null,
       );
 
-    return { ...run, errorMessage: run.errorMessage ?? null, triggeredBy: run.triggeredBy ?? null, reportId: null, persistedAt };
+    return { ...run, errorMessage: run.errorMessage ?? null, triggeredBy: run.triggeredBy ?? null, strategyConfigId: run.strategyConfigId ?? null, reportId: null, persistedAt };
   }
 
   public listHistory(limit = 50): AnalysisHistoryItem[] {
@@ -263,6 +321,75 @@ export class AnalysisRepository {
           report: row.report_json ? (JSON.parse(row.report_json) as SwingReport) : null,
         }
       : null;
+  }
+
+  /** Single choke point for writing strategy parameter values. Every write path (create
+   * strategy, create a new draft version) must go through this method, since it's the one
+   * place that runs `StrategyConfigInputSchema.parse()` — including the min-R:R->=2.0 floor
+   * and the setup-score-weights-sum-to-100 refine — before any INSERT. The SQLite CHECK on
+   * `min_reward_risk` is defense-in-depth only; it isn't the primary enforcement mechanism. */
+  public saveStrategyConfig(strategyId: string, version: number, input: StrategyConfigInput): StrategyConfig {
+    const parsed = StrategyConfigInputSchema.parse(input);
+    const id = `${strategyId}:${version}`;
+    const createdAt = new Date().toISOString();
+    this.database
+      .prepare(
+        `INSERT INTO strategy_configs (
+          id, strategy_id, version, name, status, min_reward_risk, premium_score_threshold, config_json, created_at
+        ) VALUES (?, ?, ?, ?, 'draft', ?, ?, ?, ?)`,
+      )
+      .run(id, strategyId, version, parsed.name, parsed.parameters.minRewardRisk, parsed.parameters.premiumScoreThreshold, JSON.stringify(parsed.parameters), createdAt);
+
+    return { id, strategyId, version, name: parsed.name, status: 'draft', parameters: parsed.parameters, createdAt };
+  }
+
+  public listStrategies(status?: StrategyStatus): StrategyConfig[] {
+    const rows = status
+      ? (this.database.prepare('SELECT * FROM strategy_configs WHERE status = ? ORDER BY strategy_id, version DESC').all(status) as StrategyConfigRow[])
+      : (this.database.prepare('SELECT * FROM strategy_configs ORDER BY strategy_id, version DESC').all() as StrategyConfigRow[]);
+    return rows.map(toStrategyConfig);
+  }
+
+  public getStrategyVersions(strategyId: string): StrategyConfig[] {
+    const rows = this.database
+      .prepare('SELECT * FROM strategy_configs WHERE strategy_id = ? ORDER BY version ASC')
+      .all(strategyId) as StrategyConfigRow[];
+    return rows.map(toStrategyConfig);
+  }
+
+  public getStrategyConfigById(id: string): StrategyConfig | null {
+    const row = this.database.prepare('SELECT * FROM strategy_configs WHERE id = ?').get(id) as StrategyConfigRow | undefined;
+    return row ? toStrategyConfig(row) : null;
+  }
+
+  public getNextStrategyVersion(strategyId: string): number {
+    const row = this.database.prepare('SELECT MAX(version) AS max_version FROM strategy_configs WHERE strategy_id = ?').get(strategyId) as { max_version: number | null };
+    return (row.max_version ?? 0) + 1;
+  }
+
+  /** Transactional: demotes whatever version of `strategyId` is currently `active` to
+   * `archived`, then promotes `version` from `draft` to `active`. Only one version per
+   * strategy may be `active` at a time (also enforced by the partial unique index). */
+  public activateStrategyVersion(strategyId: string, version: number): StrategyConfig {
+    const target = this.database.prepare('SELECT * FROM strategy_configs WHERE strategy_id = ? AND version = ?').get(strategyId, version) as StrategyConfigRow | undefined;
+    if (!target) throw new Error(`Strategy ${strategyId} version ${version} does not exist.`);
+    if (target.status !== 'draft') throw new Error(`Strategy ${strategyId} version ${version} is not a draft; only draft versions can be activated.`);
+
+    this.database.exec('BEGIN IMMEDIATE');
+    try {
+      this.database
+        .prepare(`UPDATE strategy_configs SET status = 'archived' WHERE strategy_id = ? AND status = 'active'`)
+        .run(strategyId);
+      this.database
+        .prepare(`UPDATE strategy_configs SET status = 'active' WHERE strategy_id = ? AND version = ?`)
+        .run(strategyId, version);
+      this.database.exec('COMMIT');
+    } catch (error) {
+      this.database.exec('ROLLBACK');
+      throw error;
+    }
+
+    return { ...toStrategyConfig(target), status: 'active' };
   }
 
   public close() {

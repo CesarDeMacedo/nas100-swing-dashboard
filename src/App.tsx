@@ -9,7 +9,7 @@ import { parseCandleDataset } from './domain/candles';
 import { buildDashboardState } from './application/buildDashboardState';
 import { currentCandleDatasetSource } from './domain/fixtures';
 import { useDashboardStore } from './store/dashboardStore';
-import { localAnalysisService, type HistoryResult, type LocalAnalysisServiceClient, type ManualRunResult, type OandaPreviewCandle, type OandaPreviewData, type OandaPreviewResult, type OandaProviderStatus, type RunDetailResult, type SavedOandaDisplaySnapshot, type ServiceAvailability } from './serviceClient/localAnalysisService';
+import { localAnalysisService, type BacktestListResult, type BacktestReportResult, type HistoryResult, type LocalAnalysisServiceClient, type ManualRunResult, type OandaPreviewCandle, type OandaPreviewData, type OandaPreviewResult, type OandaProviderStatus, type RunDetailResult, type SavedOandaDisplaySnapshot, type ServiceAvailability, type StrategyDetailResult, type StrategyListResult, type StrategyMutationResult, type StrategyParameters } from './serviceClient/localAnalysisService';
 
 const candleTime = (candle: unknown): string | null => {
   if (!candle || typeof candle !== 'object') return null;
@@ -72,6 +72,16 @@ export default function App({
   const [oandaPreviewLoading, setOandaPreviewLoading] = useState(false);
   const [oandaPreviewError, setOandaPreviewError] = useState<string | null>(null);
   const [oandaStatus, setOandaStatus] = useState<'checking' | OandaProviderStatus | null>(null);
+  const [strategiesOpen, setStrategiesOpen] = useState(false);
+  const [strategyList, setStrategyList] = useState<StrategyListResult | { kind: 'loading' } | null>(null);
+  const [strategyDetail, setStrategyDetail] = useState<StrategyDetailResult | { kind: 'loading' } | null>(null);
+  const [selectedStrategyId, setSelectedStrategyId] = useState<string | null>(null);
+  const [strategyCreateState, setStrategyCreateState] = useState<'idle' | 'running' | StrategyMutationResult['kind']>('idle');
+  const [strategyCreateResult, setStrategyCreateResult] = useState<StrategyMutationResult | null>(null);
+  const [backtestsOpen, setBacktestsOpen] = useState(false);
+  const [backtestList, setBacktestList] = useState<BacktestListResult | { kind: 'loading' } | null>(null);
+  const [backtestDetail, setBacktestDetail] = useState<BacktestReportResult | { kind: 'loading' } | null>(null);
+  const [selectedBacktestId, setSelectedBacktestId] = useState<string | null>(null);
   const savedAnalysisResult = useMemo(() => savedOandaSnapshot ? parseAnalysis(savedOandaSnapshot.analysis) : null, [savedOandaSnapshot]);
   const savedCandleResult = useMemo(() => savedOandaSnapshot ? parseCandleDataset({ schemaVersion: '1.0.0', datasetId: `saved-oanda:${savedOandaSnapshot.instrument}:${savedOandaSnapshot.h4SourceCandleTime ?? 'unavailable'}`, description: 'Saved immutable OANDA H4 analysis snapshot.', isSynthetic: false, timezone: 'America/Toronto', instrument: savedOandaSnapshot.instrument, timeframe: 'H4', candles: mergeCandleSeries(savedOandaSnapshot.candles as unknown[], gapCandles, liveOpenCandle) }) : null, [savedOandaSnapshot, gapCandles, liveOpenCandle]);
   const activeAnalysis = savedOandaSnapshot ? (savedAnalysisResult?.success ? savedAnalysisResult.analysis : null) : dashboardAnalysis;
@@ -235,6 +245,67 @@ export default function App({
     setHistoryOpen(false);
   };
 
+  const loadStrategies = async () => {
+    if (!serviceClient.listStrategies) return;
+    setStrategyList({ kind: 'loading' });
+    setStrategyList(await serviceClient.listStrategies());
+  };
+
+  const openStrategies = () => {
+    setStrategiesOpen(true);
+    void loadStrategies();
+  };
+
+  const selectStrategy = async (strategyId: string) => {
+    if (!serviceClient.getStrategy) return;
+    setSelectedStrategyId(strategyId);
+    setStrategyDetail({ kind: 'loading' });
+    setStrategyDetail(await serviceClient.getStrategy(strategyId));
+  };
+
+  const createStrategy = async (name: string, parameters: StrategyParameters) => {
+    if (!serviceClient.createStrategy) return;
+    setStrategyCreateState('running');
+    const result = await serviceClient.createStrategy(name, parameters);
+    setStrategyCreateResult(result);
+    setStrategyCreateState(result.kind);
+    if (result.kind === 'succeeded') void loadStrategies();
+  };
+
+  const createStrategyVersion = async (strategyId: string, name: string, parameters: StrategyParameters) => {
+    if (!serviceClient.createStrategyVersion) return;
+    setStrategyCreateState('running');
+    const result = await serviceClient.createStrategyVersion(strategyId, name, parameters);
+    setStrategyCreateResult(result);
+    setStrategyCreateState(result.kind);
+    if (result.kind === 'succeeded') { void loadStrategies(); void selectStrategy(strategyId); }
+  };
+
+  const activateStrategyVersion = async (strategyId: string, version: number) => {
+    if (!serviceClient.activateStrategyVersion) return;
+    await serviceClient.activateStrategyVersion(strategyId, version);
+    void loadStrategies();
+    void selectStrategy(strategyId);
+  };
+
+  const loadBacktests = async () => {
+    if (!serviceClient.listBacktests) return;
+    setBacktestList({ kind: 'loading' });
+    setBacktestList(await serviceClient.listBacktests());
+  };
+
+  const openBacktests = () => {
+    setBacktestsOpen(true);
+    void loadBacktests();
+  };
+
+  const selectBacktest = async (runId: string) => {
+    if (!serviceClient.getBacktest) return;
+    setSelectedBacktestId(runId);
+    setBacktestDetail({ kind: 'loading' });
+    setBacktestDetail(await serviceClient.getBacktest(runId));
+  };
+
   const loadOandaPreview = async () => {
     if (!serviceClient.getOandaCandles) return;
     setOandaPreviewLoading(true); setOandaPreviewError(null);
@@ -286,6 +357,27 @@ export default function App({
           oandaManualRunState={oandaManualRunState}
           oandaManualRunResult={oandaManualRunResult}
           onRunOandaNow={() => void runManualOandaNow()}
+          strategiesOpen={strategiesOpen}
+          strategyList={strategyList}
+          strategyDetail={strategyDetail}
+          selectedStrategyId={selectedStrategyId}
+          strategyCreateState={strategyCreateState}
+          strategyCreateResult={strategyCreateResult}
+          onOpenStrategies={openStrategies}
+          onCloseStrategies={() => setStrategiesOpen(false)}
+          onRefreshStrategies={() => void loadStrategies()}
+          onSelectStrategy={(strategyId) => void selectStrategy(strategyId)}
+          onCreateStrategy={(name, parameters) => void createStrategy(name, parameters)}
+          onCreateStrategyVersion={(strategyId, name, parameters) => void createStrategyVersion(strategyId, name, parameters)}
+          onActivateStrategyVersion={(strategyId, version) => void activateStrategyVersion(strategyId, version)}
+          backtestsOpen={backtestsOpen}
+          backtestList={backtestList}
+          backtestDetail={backtestDetail}
+          selectedBacktestId={selectedBacktestId}
+          onOpenBacktests={openBacktests}
+          onCloseBacktests={() => setBacktestsOpen(false)}
+          onRefreshBacktests={() => void loadBacktests()}
+          onSelectBacktest={(runId) => void selectBacktest(runId)}
         />
       ) : null}
     </AppShell>

@@ -1,4 +1,5 @@
 import type { DataFreshness, ProviderStatus } from '../schemas/enums';
+import { DEFAULT_STRATEGY_PARAMETERS, type ResolvedStrategyParameters } from './strategyParameters';
 import type { TechnicalContext } from './technicalContext';
 
 export type EntryDirection = 'long' | 'short';
@@ -48,6 +49,7 @@ const validPositiveNumber = (value: number | null) =>
 export function evaluatePatienceFilter(
   direction: EntryDirection,
   input: PatienceFilterInput,
+  params: ResolvedStrategyParameters = DEFAULT_STRATEGY_PARAMETERS,
 ): PatienceFilterResult {
   const passedChecks: string[] = [];
   const blockingReasons: string[] = [];
@@ -80,8 +82,8 @@ export function evaluatePatienceFilter(
 
   if (input.estimatedRR === null || !Number.isFinite(input.estimatedRR)) {
     missingInputs.push('estimatedRR');
-  } else if (input.estimatedRR < 2) {
-    blockingReasons.push('Estimated reward-to-risk is below 2.0');
+  } else if (input.estimatedRR < params.minRewardRisk) {
+    blockingReasons.push(`Estimated reward-to-risk is below ${params.minRewardRisk.toFixed(1)}`);
   } else {
     passedChecks.push('minimum_reward_to_risk');
   }
@@ -100,7 +102,7 @@ export function evaluatePatienceFilter(
     waitingReasons.push('Confirmation candle is not yet valid');
   } else blockingReasons.push('Confirmation candle is invalid');
 
-  const primarySignals = [input.crossMarket.us500[direction], input.crossMarket.us30[direction]];
+  const primarySignals = params.crossMarketPrimaryInstruments.map((key) => input.crossMarket[key][direction]);
   if (primarySignals.includes('contradicting')) {
     blockingReasons.push('A primary cross-market index contradicts the direction');
   } else if (primarySignals.includes('confirming')) {
@@ -108,8 +110,11 @@ export function evaluatePatienceFilter(
   } else {
     waitingReasons.push('Primary cross-market confirmation is incomplete');
   }
-  if (input.crossMarket.russell2000[direction] === 'confirming') {
-    passedChecks.push('russell2000_supportive');
+  const supplementaryInstruments = (['us500', 'us30', 'russell2000'] as const).filter(
+    (key) => !params.crossMarketPrimaryInstruments.includes(key),
+  );
+  if (supplementaryInstruments.some((key) => input.crossMarket[key][direction] === 'confirming')) {
+    passedChecks.push('supplementary_cross_market_supportive');
   }
 
   if (input.structurallyInvalidated) blockingReasons.push('Structural invalidation has occurred');

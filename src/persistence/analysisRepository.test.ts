@@ -9,6 +9,7 @@ import { buildSwingReport } from '../application/buildSwingReport';
 import { parseAnalysis } from '../domain/analysis';
 import { parseCandleDataset } from '../domain/candles';
 import { currentAnalysisSource, currentCandleDatasetSource } from '../domain/fixtures';
+import type { StrategyParameters } from '../schemas/strategyConfig';
 import { AnalysisRepository, defaultPersistencePath } from './analysisRepository';
 
 const temporaryDirectories: string[] = [];
@@ -155,5 +156,85 @@ describe('AnalysisRepository', () => {
     expect(rehydrated?.run).toEqual(stored);
     expect(rehydrated?.run.triggeredBy).toBeNull();
     reopened.close();
+  });
+});
+
+const strategyParameters = (overrides: Partial<StrategyParameters> = {}): StrategyParameters => ({
+  minRewardRisk: 2,
+  premiumScoreThreshold: 70,
+  atrLocationTolerance: 0.35,
+  atrTriggerBuffer: 0.05,
+  atrStopBuffer: 0.25,
+  atrInvalidationBuffer: 0.1,
+  crossMarketPrimaryInstruments: ['us500', 'us30'],
+  setupScoreWeights: { trend: 20, structure: 20, momentum: 15, location: 15, crossMarket: 10, eventRisk: 5, rewardRisk: 10, patienceReadiness: 5 },
+  eventRisk: { blockingWindowMinutes: 60, minImpact: 'High' },
+  ...overrides,
+});
+
+describe('AnalysisRepository strategy configs', () => {
+  it('creates a version-1 draft and enforces the min-R:R>=2.0 floor at the same choke point', () => {
+    const repository = createRepository();
+    const strategyId = 'strategy-aggressive';
+    const version = repository.getNextStrategyVersion(strategyId);
+    expect(version).toBe(1);
+
+    const saved = repository.saveStrategyConfig(strategyId, version, { name: 'Aggressive', parameters: strategyParameters() });
+    expect(saved).toMatchObject({ strategyId, version: 1, status: 'draft', name: 'Aggressive' });
+
+    expect(() =>
+      repository.saveStrategyConfig(strategyId, repository.getNextStrategyVersion(strategyId), {
+        name: 'Too tight',
+        parameters: strategyParameters({ minRewardRisk: 1.5 }),
+      }),
+    ).toThrow();
+    repository.close();
+  });
+
+  it('rejects setup-score weights that do not sum to 100 through the same schema', () => {
+    const repository = createRepository();
+    expect(() =>
+      repository.saveStrategyConfig('strategy-bad-weights', 1, {
+        name: 'Bad weights',
+        parameters: strategyParameters({ setupScoreWeights: { trend: 20, structure: 20, momentum: 15, location: 15, crossMarket: 10, eventRisk: 5, rewardRisk: 10, patienceReadiness: 99 } }),
+      }),
+    ).toThrow();
+    repository.close();
+  });
+
+  it('only lets one version per strategy be active, demoting the previous active version to archived', () => {
+    const repository = createRepository();
+    const strategyId = 'strategy-versioned';
+    repository.saveStrategyConfig(strategyId, 1, { name: 'V1', parameters: strategyParameters() });
+    repository.activateStrategyVersion(strategyId, 1);
+    repository.saveStrategyConfig(strategyId, 2, { name: 'V2', parameters: strategyParameters({ minRewardRisk: 2.5 }) });
+    repository.activateStrategyVersion(strategyId, 2);
+
+    const versions = repository.getStrategyVersions(strategyId);
+    expect(versions.find((v) => v.version === 1)?.status).toBe('archived');
+    expect(versions.find((v) => v.version === 2)?.status).toBe('active');
+    expect(repository.listStrategies('active').map((s) => s.id)).toEqual([`${strategyId}:2`]);
+    repository.close();
+  });
+
+  it('refuses to activate a version that is not a draft', () => {
+    const repository = createRepository();
+    const strategyId = 'strategy-double-activate';
+    repository.saveStrategyConfig(strategyId, 1, { name: 'V1', parameters: strategyParameters() });
+    repository.activateStrategyVersion(strategyId, 1);
+
+    expect(() => repository.activateStrategyVersion(strategyId, 1)).toThrow('not a draft');
+    repository.close();
+  });
+
+  it('links an analysis run to the strategy config that produced it', () => {
+    const repository = createRepository();
+    const strategyId = 'strategy-linked';
+    const strategy = repository.saveStrategyConfig(strategyId, 1, { name: 'Linked', parameters: strategyParameters() });
+    const stored = repository.saveCompletedRun({ ...completedRun('linked-run'), strategyConfigId: strategy.id }, currentReport());
+
+    expect(stored.strategyConfigId).toBe(strategy.id);
+    expect(repository.getRunByKey(stored.runKey)?.run.strategyConfigId).toBe(strategy.id);
+    repository.close();
   });
 });

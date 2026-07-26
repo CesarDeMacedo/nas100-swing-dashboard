@@ -1,8 +1,10 @@
 import type { PriceZone } from '../schemas/analysis';
 import type { Candle } from '../schemas/candles';
 import type { ConfirmationCandle, EntryDirection, EntryLocation } from './patienceFilter';
+import { DEFAULT_STRATEGY_PARAMETERS, type ResolvedStrategyParameters } from './strategyParameters';
 import type { TechnicalContext } from './technicalContext';
 
+/** @deprecated kept for reference/tests; live values now come from ResolvedStrategyParameters (see strategyParameters.ts) */
 export const TRADE_PLAN_LOCATION_ATR_TOLERANCE = 0.35;
 export const TRADE_PLAN_TRIGGER_ATR_BUFFER = 0.05;
 export const TRADE_PLAN_STOP_ATR_BUFFER = 0.25;
@@ -49,7 +51,7 @@ const uniqueSorted = (values: number[], direction: EntryDirection, entry: number
 const candlePosition = (candle: Candle) =>
   candle.high === candle.low ? 0.5 : (candle.close - candle.low) / (candle.high - candle.low);
 
-export function calculateTradePlan(input: TradePlanInput): TradePlan {
+export function calculateTradePlan(input: TradePlanInput, params: ResolvedStrategyParameters = DEFAULT_STRATEGY_PARAMETERS): TradePlan {
   const { direction, technicalContext: context, latestCandle } = input;
   const atr = context.indicatorSnapshot.atr14.value;
   const ema20 = context.indicatorSnapshot.ema20.value;
@@ -70,8 +72,8 @@ export function calculateTradePlan(input: TradePlanInput): TradePlan {
     ? [input.preferredEntryZone, ...input.supportZones].filter(Boolean) as PriceZone[]
     : [input.preferredEntryZone, ...input.resistanceZones].filter(Boolean) as PriceZone[];
   const nearZone = zones.find((zone) => currentPrice! >= zone.low && currentPrice! <= zone.high) ??
-    zones.find((zone) => Math.min(Math.abs(currentPrice! - zone.low), Math.abs(currentPrice! - zone.high)) <= atr! * TRADE_PLAN_LOCATION_ATR_TOLERANCE);
-  const nearEma = Math.min(Math.abs(currentPrice! - ema20!), Math.abs(currentPrice! - ema21!)) <= atr! * TRADE_PLAN_LOCATION_ATR_TOLERANCE;
+    zones.find((zone) => Math.min(Math.abs(currentPrice! - zone.low), Math.abs(currentPrice! - zone.high)) <= atr! * params.atrLocationTolerance);
+  const nearEma = Math.min(Math.abs(currentPrice! - ema20!), Math.abs(currentPrice! - ema21!)) <= atr! * params.atrLocationTolerance;
   const bearishStructure = ['bearish_trend', 'bearish_breakout'].includes(context.canonicalH4Structure);
   const bullishStructure = ['bullish_trend', 'bullish_breakout'].includes(context.canonicalH4Structure);
   const candidates = direction === 'long'
@@ -79,13 +81,13 @@ export function calculateTradePlan(input: TradePlanInput): TradePlan {
     : [...zones.map((zone) => zone.high), context.h4Structure.recentSwingHigh].filter((value): value is number => value !== null);
   const invalidationBase = candidates.length ? (direction === 'long' ? Math.min(...candidates) : Math.max(...candidates)) : null;
   const invalidationPrice = invalidationBase === null ? null : direction === 'long'
-    ? invalidationBase - atr! * TRADE_PLAN_INVALIDATION_ATR_BUFFER
-    : invalidationBase + atr! * TRADE_PLAN_INVALIDATION_ATR_BUFFER;
+    ? invalidationBase - atr! * params.atrInvalidationBuffer
+    : invalidationBase + atr! * params.atrInvalidationBuffer;
   const structurallyInvalidated = invalidationPrice !== null && (direction === 'long' ? currentPrice! < invalidationPrice : currentPrice! > invalidationPrice);
   const incompatibleStructure = direction === 'long' ? bearishStructure : bullishStructure;
   const tooExtended = direction === 'long'
-    ? currentPrice! > Math.max(ema20!, ema21!) + atr! * TRADE_PLAN_LOCATION_ATR_TOLERANCE && !nearZone
-    : currentPrice! < Math.min(ema20!, ema21!) - atr! * TRADE_PLAN_LOCATION_ATR_TOLERANCE && !nearZone;
+    ? currentPrice! > Math.max(ema20!, ema21!) + atr! * params.atrLocationTolerance && !nearZone
+    : currentPrice! < Math.min(ema20!, ema21!) - atr! * params.atrLocationTolerance && !nearZone;
   const locationStatus: EntryLocation = structurallyInvalidated || incompatibleStructure
     ? 'invalid'
     : nearZone || nearEma
@@ -108,14 +110,14 @@ export function calculateTradePlan(input: TradePlanInput): TradePlan {
         ? 'confirmed'
         : 'missing';
   const entryPrice = confirmed ? direction === 'long'
-    ? latestCandle!.high + atr! * TRADE_PLAN_TRIGGER_ATR_BUFFER
-    : latestCandle!.low - atr! * TRADE_PLAN_TRIGGER_ATR_BUFFER : null;
+    ? latestCandle!.high + atr! * params.atrTriggerBuffer
+    : latestCandle!.low - atr! * params.atrTriggerBuffer : null;
   const entryTrigger = confirmed
     ? direction === 'long' ? 'Enter above the completed bullish H4 confirmation high.' : 'Enter below the completed bearish H4 confirmation low.'
     : direction === 'long' ? 'Wait for a completed bullish H4 close above support.' : 'Wait for a completed bearish H4 close below resistance.';
   const stopPrice = invalidationPrice === null || entryPrice === null ? null : direction === 'long'
-    ? invalidationPrice - atr! * TRADE_PLAN_STOP_ATR_BUFFER
-    : invalidationPrice + atr! * TRADE_PLAN_STOP_ATR_BUFFER;
+    ? invalidationPrice - atr! * params.atrStopBuffer
+    : invalidationPrice + atr! * params.atrStopBuffer;
   const levelZones = direction === 'long' ? input.resistanceZones.map((zone) => zone.low) : input.supportZones.map((zone) => zone.high);
   const swingTarget = direction === 'long' ? context.h4Structure.recentSwingHigh : context.h4Structure.recentSwingLow;
   let targets = entryPrice === null ? [] : uniqueSorted([...levelZones, ...(swingTarget === null ? [] : [swingTarget])], direction, entryPrice);
@@ -128,17 +130,17 @@ export function calculateTradePlan(input: TradePlanInput): TradePlan {
   const reward = entryPrice === null || firstTarget === undefined ? null : direction === 'long' ? firstTarget - entryPrice : entryPrice - firstTarget;
   const estimatedRewardRisk = risk !== null && reward !== null && risk > 0 && reward > 0 ? reward / risk : null;
   const warnings = [
-    ...(estimatedRewardRisk !== null && estimatedRewardRisk < 2 ? ['Estimated reward-to-risk is below 2.0'] : []),
+    ...(estimatedRewardRisk !== null && estimatedRewardRisk < params.minRewardRisk ? [`Estimated reward-to-risk is below ${params.minRewardRisk.toFixed(1)}`] : []),
     ...(context.latestCandleStatus !== 'COMPLETED' ? ['Technical context latest candle is not completed'] : []),
   ];
-  const status: TradePlanStatus = locationStatus === 'invalid' || structurallyInvalidated || (entryPrice !== null && (stopPrice === null || estimatedRewardRisk === null || estimatedRewardRisk < 2))
+  const status: TradePlanStatus = locationStatus === 'invalid' || structurallyInvalidated || (entryPrice !== null && (stopPrice === null || estimatedRewardRisk === null || estimatedRewardRisk < params.minRewardRisk))
     ? 'invalid'
     : locationStatus !== 'acceptable' || confirmationStatus !== 'confirmed'
       ? 'forming'
       : 'ready';
   return {
     direction, status, locationStatus, confirmationStatus, entryTrigger, entryPrice, invalidationPrice, stopPrice,
-    stopMethod: stopPrice === null ? null : `Structural invalidation plus ${TRADE_PLAN_STOP_ATR_BUFFER} ATR`,
+    stopMethod: stopPrice === null ? null : `Structural invalidation plus ${params.atrStopBuffer} ATR`,
     targets, estimatedRewardRisk, atrUsed: atr, sourceCandleTime,
     reasons: [
       ...(locationStatus === 'acceptable' ? ['Entry location is within the approved ATR or zone tolerance'] : []),

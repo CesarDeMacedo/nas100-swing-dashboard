@@ -141,7 +141,7 @@ describe('local manual-run service', () => {
     const service = await startService({ schedulerEnabled: true });
     const health = await fetch(`${service.baseUrl}/health`).then((response) => response.json());
 
-    expect(health.scheduler).toMatchObject({ enabled: true, running: true, configuredProvider: 'fixture', activeProvider: 'fixture', configuredSchedule: ['Monday-Friday 13:01', 'Sunday-Friday 21:01'] });
+    expect(health.scheduler).toMatchObject({ enabled: true, running: true, configuredProvider: 'fixture', activeProvider: 'fixture', configuredSchedule: ['Monday-Friday 01:01', 'Monday-Friday 05:01', 'Monday-Friday 09:01', 'Monday-Friday 13:01', 'Monday-Friday 17:01', 'Sunday-Friday 21:01'] });
     await service.stop();
     expect(service.schedulerStatus().running).toBe(false);
   });

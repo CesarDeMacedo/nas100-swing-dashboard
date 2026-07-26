@@ -1,15 +1,32 @@
 export const SCHEDULER_TIMEZONE = 'America/Toronto';
 export const SCHEDULER_SCHEDULE = [
+  'Monday-Friday 01:01',
+  'Monday-Friday 05:01',
+  'Monday-Friday 09:01',
   'Monday-Friday 13:01',
+  'Monday-Friday 17:01',
   'Sunday-Friday 21:01',
 ] as const;
+
+export type TorontoScheduleTime = '01:01' | '05:01' | '09:01' | '13:01' | '17:01' | '21:01';
 
 export type TorontoScheduleSlot = {
   key: string;
   localDate: string;
   weekday: string;
-  time: '13:01' | '21:01';
+  time: TorontoScheduleTime;
 };
+
+const MON_FRI = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'] as const;
+
+const SLOT_DEFINITIONS: readonly { time: TorontoScheduleTime; weekdays: readonly string[] }[] = [
+  { time: '01:01', weekdays: MON_FRI },
+  { time: '05:01', weekdays: MON_FRI },
+  { time: '09:01', weekdays: MON_FRI },
+  { time: '13:01', weekdays: MON_FRI },
+  { time: '17:01', weekdays: MON_FRI },
+  { time: '21:01', weekdays: ['Sunday', ...MON_FRI] },
+];
 
 const formatter = new Intl.DateTimeFormat('en-CA', {
   timeZone: SCHEDULER_TIMEZONE,
@@ -29,13 +46,11 @@ export const getTorontoScheduleSlot = (date: Date): TorontoScheduleSlot | null =
   const weekday = parts.weekday;
   const localDate = `${parts.year}-${parts.month}-${parts.day}`;
   const time = `${parts.hour}:${parts.minute}`;
-  const isWeekday = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].includes(weekday);
-  const isSunday = weekday === 'Sunday';
 
-  if ((isWeekday && time === '13:01') || ((isWeekday || isSunday) && time === '21:01')) {
-    return { key: `${localDate}:${time}`, localDate, weekday, time: time as '13:01' | '21:01' };
-  }
-  return null;
+  const definition = SLOT_DEFINITIONS.find((slot) => slot.time === time);
+  if (!definition || !definition.weekdays.includes(weekday)) return null;
+
+  return { key: `${localDate}:${time}`, localDate, weekday, time: definition.time };
 };
 
 export const parseSchedulerEnabled = (value: string | undefined): boolean => {

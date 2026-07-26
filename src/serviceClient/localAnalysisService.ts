@@ -32,6 +32,11 @@ export type PersistedRun = {
   source: string;
   persistedAt: string;
   reportId: string | null;
+  /** null means default/unversioned strategy parameters, or a strategy that has since been
+   * deleted — distinct from "no strategy concept exists" (see `withStrategyLabel` server-side).
+   * Optional so existing fixtures/mocks that predate this field aren't forced to supply it. */
+  strategyName?: string | null;
+  strategyVersion?: number | null;
 };
 
 export type AnalysisHistorySummary = {
@@ -98,6 +103,13 @@ export type LocalAnalysisServiceClient = {
   getRunByKey: (runKey: string) => Promise<RunDetailResult>;
   getOandaCandles?: (count?: number) => Promise<OandaPreviewResult>;
   subscribeOandaLiveH4?: (listener: (event: OandaLiveEvent) => void) => () => void;
+  listStrategies?: (status?: 'draft' | 'active' | 'archived') => Promise<StrategyListResult>;
+  getStrategy?: (strategyId: string) => Promise<StrategyDetailResult>;
+  createStrategy?: (name: string, parameters: StrategyParameters) => Promise<StrategyMutationResult>;
+  createStrategyVersion?: (strategyId: string, name: string, parameters: StrategyParameters) => Promise<StrategyMutationResult>;
+  activateStrategyVersion?: (strategyId: string, version: number) => Promise<StrategyMutationResult>;
+  listBacktests?: (strategyConfigId?: string) => Promise<BacktestListResult>;
+  getBacktest?: (id: string) => Promise<BacktestReportResult>;
 };
 
 export type OandaPreviewCandle = { time: string; open: number; high: number; low: number; close: number; isClosed: boolean; instrument: string; timeframe: 'H4'; source: 'oanda-v20' };
@@ -105,6 +117,87 @@ export type OandaPreviewData = { provider: 'oanda-v20'; environment: 'practice' 
 export type OandaPreviewResult = { kind: 'succeeded'; data: OandaPreviewData } | { kind: 'failed' | 'malformed_response'; message: string };
 
 export type OandaLiveEvent = { type: 'connection' | 'snapshot' | 'price' | 'candle' | 'heartbeat' | 'error'; payload: Record<string, unknown> };
+
+export type StrategyParameters = {
+  minRewardRisk: number;
+  premiumScoreThreshold: number;
+  atrLocationTolerance: number;
+  atrTriggerBuffer: number;
+  atrStopBuffer: number;
+  atrInvalidationBuffer: number;
+  crossMarketPrimaryInstruments: ('us500' | 'us30' | 'russell2000')[];
+  setupScoreWeights: { trend: number; structure: number; momentum: number; location: number; crossMarket: number; eventRisk: number; rewardRisk: number; patienceReadiness: number };
+  eventRisk: { blockingWindowMinutes: number; minImpact: 'High' | 'Medium' | 'Low' };
+};
+
+export type StrategyConfig = {
+  id: string;
+  strategyId: string;
+  version: number;
+  name: string;
+  status: 'draft' | 'active' | 'archived';
+  parameters: StrategyParameters;
+  createdAt: string;
+};
+
+export type StrategyListResult = { kind: 'succeeded'; strategies: StrategyConfig[] } | { kind: 'failed'; message: string } | { kind: 'malformed_response'; message: string };
+export type StrategyDetailResult = { kind: 'succeeded'; strategyId: string; versions: StrategyConfig[] } | { kind: 'failed'; message: string } | { kind: 'malformed_response'; message: string };
+export type StrategyMutationResult = { kind: 'succeeded'; strategy: StrategyConfig } | { kind: 'validation_failed'; message: string } | { kind: 'failed'; message: string } | { kind: 'malformed_response'; message: string };
+
+export type BacktestRunSummary = {
+  id: string;
+  strategyConfigId: string;
+  instrument: string;
+  rangeStart: string;
+  rangeEnd: string;
+  status: 'running' | 'completed' | 'failed';
+  startedAt: string;
+  completedAt: string | null;
+  frameCount: number | null;
+  errorMessage: string | null;
+};
+
+export type BacktestSignal = {
+  id: string;
+  backtestRunId: string;
+  decisionCandleTime: string;
+  direction: 'long' | 'short';
+  entryPrice: number;
+  invalidationPrice: number;
+  stopPrice: number;
+  targetPrice: number;
+  estimatedRewardRisk: number;
+  score: number | null;
+  grade: string | null;
+  localHourOfDay: number;
+  localWeekday: number;
+  status: 'pending' | 'filled' | 'cancelled' | 'win' | 'loss' | 'unresolved';
+  filledAt: string | null;
+  resolvedAt: string | null;
+  outcomeRR: number | null;
+};
+
+export type BacktestReport = {
+  run: BacktestRunSummary;
+  summary: {
+    signalCount: number;
+    filledCount: number;
+    cancelledCount: number;
+    winCount: number;
+    lossCount: number;
+    unresolvedCount: number;
+    winRate: number | null;
+    avgRewardRisk: number;
+    avgWinRewardRisk: number | null;
+    expectancy: number;
+  };
+  breakdownByHour: { hour: number; signalCount: number; winRate: number | null }[];
+  breakdownByWeekday: { weekday: number; signalCount: number; winRate: number | null }[];
+  signals: BacktestSignal[];
+};
+
+export type BacktestListResult = { kind: 'succeeded'; backtests: BacktestRunSummary[] } | { kind: 'failed'; message: string } | { kind: 'malformed_response'; message: string };
+export type BacktestReportResult = { kind: 'succeeded'; report: BacktestReport } | { kind: 'not_found' } | { kind: 'failed'; message: string } | { kind: 'malformed_response'; message: string };
 
 const serviceUrl = () =>
   (import.meta.env.VITE_NAS100_SERVICE_URL || DEFAULT_LOCAL_ANALYSIS_SERVICE_URL).replace(/\/$/, '');
@@ -131,7 +224,7 @@ const isManualRunSummary = (value: unknown): value is ManualRunSummary => {
 const isPersistedRun = (value: unknown): value is PersistedRun => {
   if (!value || typeof value !== 'object') return false;
   const run = value as Record<string, unknown>;
-  return typeof run.id === 'string' && typeof run.runKey === 'string' && typeof run.completedAt === 'string' && typeof run.status === 'string' && typeof run.source === 'string' && typeof run.persistedAt === 'string' && (typeof run.reportId === 'string' || run.reportId === null);
+  return typeof run.id === 'string' && typeof run.runKey === 'string' && typeof run.completedAt === 'string' && typeof run.status === 'string' && typeof run.source === 'string' && typeof run.persistedAt === 'string' && (typeof run.reportId === 'string' || run.reportId === null) && (run.strategyName === undefined || typeof run.strategyName === 'string' || run.strategyName === null) && (run.strategyVersion === undefined || typeof run.strategyVersion === 'number' || run.strategyVersion === null);
 };
 
 const isSavedOandaDisplaySnapshot = (value: unknown): value is SavedOandaDisplaySnapshot => {
@@ -151,6 +244,33 @@ const isAnalysisHistorySummary = (value: unknown): value is AnalysisHistorySumma
   const report = value as Record<string, unknown>;
   return typeof report.action === 'string' && typeof report.direction === 'string' && (typeof report.score === 'number' || report.score === null) && (typeof report.grade === 'string' || report.grade === null) && (typeof report.sourceCandleTime === 'string' || report.sourceCandleTime === null) && typeof report.isActionable === 'boolean';
 };
+const isStrategyConfig = (value: unknown): value is StrategyConfig => {
+  if (!value || typeof value !== 'object') return false;
+  const config = value as Record<string, unknown>;
+  return (
+    typeof config.id === 'string' &&
+    typeof config.strategyId === 'string' &&
+    typeof config.version === 'number' &&
+    typeof config.name === 'string' &&
+    (config.status === 'draft' || config.status === 'active' || config.status === 'archived') &&
+    typeof config.createdAt === 'string' &&
+    config.parameters !== null &&
+    typeof config.parameters === 'object'
+  );
+};
+
+const isBacktestRunSummary = (value: unknown): value is BacktestRunSummary => {
+  if (!value || typeof value !== 'object') return false;
+  const run = value as Record<string, unknown>;
+  return typeof run.id === 'string' && typeof run.strategyConfigId === 'string' && typeof run.instrument === 'string' && (run.status === 'running' || run.status === 'completed' || run.status === 'failed');
+};
+
+const isBacktestReport = (value: unknown): value is BacktestReport => {
+  if (!value || typeof value !== 'object') return false;
+  const report = value as Record<string, unknown>;
+  return isBacktestRunSummary(report.run) && report.summary !== null && typeof report.summary === 'object' && Array.isArray(report.breakdownByHour) && Array.isArray(report.breakdownByWeekday) && Array.isArray(report.signals);
+};
+
 const isOandaPreviewData = (value: unknown): value is OandaPreviewData => {
   if (!value || typeof value !== 'object') return false;
   const data = value as Record<string, unknown>;
@@ -287,6 +407,86 @@ export function createLocalAnalysisServiceClient(baseUrl = serviceUrl()): LocalA
       });
       source.onerror = () => listener({ type: 'error', payload: { state: 'offline', message: 'Local live observation connection is unavailable.' } });
       return () => source.close();
+    },
+    async listStrategies(status) {
+      try {
+        const response = await request(status ? `/strategies?status=${encodeURIComponent(status)}` : '/strategies');
+        const payload = await responseJson(response);
+        if (!response.ok) return { kind: 'failed', message: serviceErrorMessage(payload, 'Could not load strategies.') };
+        if (!payload || typeof payload !== 'object' || !('strategies' in payload) || !Array.isArray(payload.strategies) || !payload.strategies.every(isStrategyConfig)) return invalidResponse('Local service returned an invalid strategies response.');
+        return { kind: 'succeeded', strategies: payload.strategies };
+      } catch {
+        return { kind: 'failed', message: 'Start the local analysis service to manage strategies.' };
+      }
+    },
+    async getStrategy(strategyId) {
+      try {
+        const response = await request(`/strategies/${encodeURIComponent(strategyId)}`);
+        const payload = await responseJson(response);
+        if (!response.ok) return { kind: 'failed', message: serviceErrorMessage(payload, 'Could not load this strategy.') };
+        if (!payload || typeof payload !== 'object' || typeof (payload as { strategyId?: unknown }).strategyId !== 'string' || !Array.isArray((payload as { versions?: unknown }).versions) || !(payload as { versions: unknown[] }).versions.every(isStrategyConfig)) return invalidResponse('Local service returned an invalid strategy response.');
+        return { kind: 'succeeded', strategyId: (payload as { strategyId: string }).strategyId, versions: (payload as { versions: StrategyConfig[] }).versions };
+      } catch {
+        return { kind: 'failed', message: 'Start the local analysis service to manage strategies.' };
+      }
+    },
+    async createStrategy(name, parameters) {
+      try {
+        const response = await request('/strategies', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, parameters }) });
+        const payload = await responseJson(response);
+        if (response.status === 422) return { kind: 'validation_failed', message: serviceErrorMessage(payload, 'Strategy parameters are invalid.') };
+        if (!response.ok) return { kind: 'failed', message: serviceErrorMessage(payload, 'Could not create the strategy.') };
+        if (!isStrategyConfig(payload)) return invalidResponse('Local service returned an invalid strategy response.');
+        return { kind: 'succeeded', strategy: payload };
+      } catch {
+        return { kind: 'failed', message: 'Start the local analysis service to manage strategies.' };
+      }
+    },
+    async createStrategyVersion(strategyId, name, parameters) {
+      try {
+        const response = await request(`/strategies/${encodeURIComponent(strategyId)}/versions`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, parameters }) });
+        const payload = await responseJson(response);
+        if (response.status === 422) return { kind: 'validation_failed', message: serviceErrorMessage(payload, 'Strategy parameters are invalid.') };
+        if (!response.ok) return { kind: 'failed', message: serviceErrorMessage(payload, 'Could not create the new strategy version.') };
+        if (!isStrategyConfig(payload)) return invalidResponse('Local service returned an invalid strategy response.');
+        return { kind: 'succeeded', strategy: payload };
+      } catch {
+        return { kind: 'failed', message: 'Start the local analysis service to manage strategies.' };
+      }
+    },
+    async activateStrategyVersion(strategyId, version) {
+      try {
+        const response = await request(`/strategies/${encodeURIComponent(strategyId)}/versions/${version}/activate`, { method: 'POST' });
+        const payload = await responseJson(response);
+        if (!response.ok) return { kind: 'failed', message: serviceErrorMessage(payload, 'Could not activate this strategy version.') };
+        if (!isStrategyConfig(payload)) return invalidResponse('Local service returned an invalid strategy response.');
+        return { kind: 'succeeded', strategy: payload };
+      } catch {
+        return { kind: 'failed', message: 'Start the local analysis service to manage strategies.' };
+      }
+    },
+    async listBacktests(strategyConfigId) {
+      try {
+        const response = await request(strategyConfigId ? `/backtests?strategyConfigId=${encodeURIComponent(strategyConfigId)}` : '/backtests');
+        const payload = await responseJson(response);
+        if (!response.ok) return { kind: 'failed', message: serviceErrorMessage(payload, 'Could not load backtest results.') };
+        if (!payload || typeof payload !== 'object' || !('backtests' in payload) || !Array.isArray(payload.backtests) || !payload.backtests.every(isBacktestRunSummary)) return invalidResponse('Local service returned an invalid backtests response.');
+        return { kind: 'succeeded', backtests: payload.backtests };
+      } catch {
+        return { kind: 'failed', message: 'Start the local analysis service to view backtest results.' };
+      }
+    },
+    async getBacktest(id) {
+      try {
+        const response = await request(`/backtests/${encodeURIComponent(id)}`);
+        if (response.status === 404) return { kind: 'not_found' };
+        const payload = await responseJson(response);
+        if (!response.ok) return { kind: 'failed', message: serviceErrorMessage(payload, 'Could not load this backtest report.') };
+        if (!isBacktestReport(payload)) return invalidResponse('Local service returned an invalid backtest report.');
+        return { kind: 'succeeded', report: payload };
+      } catch {
+        return { kind: 'failed', message: 'Start the local analysis service to view backtest results.' };
+      }
     },
   };
 }

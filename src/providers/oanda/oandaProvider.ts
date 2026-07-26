@@ -85,6 +85,20 @@ export class OandaProvider {
     return this.getCandles(instrument, 'H4', count);
   }
 
+  /** Historical backfill for the backtest harness. Unlike `getCandles`'s `count` param (capped
+   * client-side at 5000), this uses OANDA's `from`/`to` range query — the server still caps
+   * the number of candles returned per call (same ~5000 ceiling, enforced server-side instead
+   * of client-side), so a multi-year backfill still requires chunking across several calls
+   * (see scripts/backtest/oandaHistoricalBackfill.ts). Reuses the same normalize/validate path
+   * as `getCandles` so the harness ingests exactly the same `Candle` shape production does. */
+  public async getCandlesInRange<TTimeframe extends OandaCandleGranularity>(instrument: string, timeframe: TTimeframe, fromIso: string, toIso: string): Promise<OandaCandleResult<TTimeframe>> {
+    if (!instrument.trim()) throw new Error('An explicit OANDA instrument is required.');
+    if (Number.isNaN(Date.parse(fromIso)) || Number.isNaN(Date.parse(toIso))) throw new Error('from/to must be valid ISO-8601 timestamps.');
+    const payload = await this.client.getJson(`/v3/instruments/${encodeURIComponent(instrument)}/candles`, { granularity: timeframe, price: 'M', from: fromIso, to: toIso });
+    if (!isRecord(payload) || !Array.isArray(payload.candles)) return invalidPayload('candles array is required.');
+    return { provider: 'oanda-v20', environment: this.configuration.environment, instrument, timeframe, candles: validateCandleSeries(payload.candles.map((candle) => normalizeCandle(candle, instrument, timeframe))) };
+  }
+
   public getDailyCandles(instrument: string, count = 250): Promise<OandaDailyCandleResult> {
     return this.getCandles(instrument, 'D', count);
   }

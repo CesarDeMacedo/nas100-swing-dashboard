@@ -286,8 +286,20 @@ const safetyConstrainedState = (state: DashboardState): DashboardState => ({
   warnings: [...state.warnings, 'This manual OANDA run cannot authorize an entry while event-risk provider validation (A2 spike) is still pending.'],
 });
 
-export const oandaRunKey = (report: SwingReport, strategyVersion: string) =>
-  ['oanda-v20', report.instrument, report.timeframe, report.sourceCandleTime, report.reportVersion, strategyVersion].join(':');
+/** The trailing `strategyConfigId ?? 'default'` segment was added when strategy configs were
+ * introduced, so two different strategies analyzing the same H4 close produce distinct run
+ * keys instead of colliding on the `UNIQUE(run_key)` constraint. No production call site
+ * currently passes `strategyConfigId` (see `runManualOandaAnalysis` below), so every run key
+ * now always ends in `:default` — a one-time format change (6 segments -> 7) for ALL runs,
+ * not just strategy-specific ones. Known, accepted consequence: whichever H4 window is
+ * in-flight at deploy time may get persisted twice — once under the old key format (if a
+ * scheduler tick completed it just before deploy) and once more under the new format (the
+ * next tick after deploy won't find the old-format row via getRunByKey and will treat it as
+ * new). This is a single, non-recurring duplicate at the exact deploy boundary, not an
+ * ongoing idempotency break — every run before and after that boundary is correctly deduped
+ * against its own key format. */
+export const oandaRunKey = (report: SwingReport, strategyVersion: string, strategyConfigId?: string | null) =>
+  ['oanda-v20', report.instrument, report.timeframe, report.sourceCandleTime, report.reportVersion, strategyVersion, strategyConfigId ?? 'default'].join(':');
 
 const incompleteRunKey = (instrument: string) => ['oanda-v20', instrument, 'H4', 'unavailable', 'blocked', OANDA_STRATEGY_VERSION].join(':');
 

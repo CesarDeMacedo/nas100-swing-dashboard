@@ -1,5 +1,22 @@
 # Changelog
 
+## Configurable Strategies and Backtest Harness (ADR-017)
+
+- Added a `ResolvedStrategyParameters` type and `DEFAULT_STRATEGY_PARAMETERS` (`src/domain/strategyParameters.ts`); `calculateTradePlan`, `evaluatePatienceFilter`, `decideStrategy`, `calculateSetupScore`, `selectOfficialSetupScore`, and `buildDashboardState` all accept it as an optional trailing argument. Every existing call site is unaffected — proven by a dedicated equality test comparing the output of omitting the argument against passing `DEFAULT_STRATEGY_PARAMETERS` explicitly (`src/application/buildDashboardState.test.ts`), not just by the rest of the suite continuing to pass.
+- Added a `strategy_configs` table and repository methods (`saveStrategyConfig`, `getStrategyVersions`, `activateStrategyVersion`, ...) for named, versioned, immutable-once-active strategies (`draft -> active -> archived`), plus `POST/GET /strategies*` routes.
+- Minimum R:R (>= 2.0) and Setup Score weights (sum to exactly 100) are validated by a shared Zod schema at the single write path; a test calls `POST /strategies` directly to prove the 422 rejection is server-side, not only a UI constraint (`src/service/server.strategies.test.ts`).
+- `analysis_runs` gained an optional `strategy_config_id` column; `GET /runs`/`GET /runs/:runKey` now denormalize the strategy name/version onto each run so Analysis History can show it. `oandaRunKey` gained a trailing `strategyConfigId ?? 'default'` segment so two strategies analyzing the same candle close never collide — see `src/service/oandaRun.ts` for the one-time run-key-format-change caveat this introduces at deploy time.
+- Added an isolated CLI backtest harness (`scripts/backtest/`, own `tsconfig.scripts.json`, own SQLite file separate from production): chunked OANDA historical backfill (`oandaHistoricalBackfill.ts`), a zero-lookahead replay engine (`replayWindow.ts`/`replayEngine.ts`, proven by a dedicated test rather than asserted by convention), a fill/outcome state machine per hypothetical signal with a documented conservative same-candle tie-break rule (`signalOutcome.ts`), and report aggregation (win rate, planned-vs-realized R:R, expectancy, hour/weekday breakdown — `backtestReport.ts`).
+- Added `GET /backtests`/`GET /backtests/:id` (read-only against the harness's separate SQLite file) and two new dashboard overlay panels, `StrategyManagerPanel` and `BacktestResultsPanel`, matching the existing Analysis History pattern. "Run backtest" builds the CLI command to copy rather than triggering it over HTTP, keeping the harness isolated from the production service.
+- Event-risk history is explicitly out of scope for this first backtest version; the replay always passes `eventRisk: []` (resolves to `clear`), never `undefined` (which would resolve to `unknown` and block every signal via the Patience Filter).
+- No live or scheduled run selects a non-default strategy yet; only the backtest harness currently passes an explicit resolved strategy.
+
+## Scheduler: Six Daily Runs Instead of Two
+
+- Expanded the Toronto schedule from two daily slots (13:01, 21:01) to six — one per H4 close (01:01, 05:01, 09:01, 13:01, 17:01, 21:01) — to gather real data on when entries actually occur, ahead of upcoming backtest-driven parameter changes (`src/service/scheduler/torontoSchedule.ts`).
+- Weekday gating: the four new slots run Monday-Friday (same as the existing 13:01 slot); 21:01 keeps its existing Sunday-Friday gating for the weekly market reopen. All six times are computed via `Intl.DateTimeFormat` against `America/Toronto`, not a fixed UTC offset, and are verified correct across both 2026 DST transitions (`torontoSchedule.test.ts`, `fixtureScheduler.test.ts`).
+- `fixtureScheduler.ts` and `scheduledOandaRun.ts` (retry/backoff, H4-window correctness) required no changes — both were already generic to the number of configured slots.
+
 ## Immediate Dashboard Display After Manual OANDA Run
 
 - Clicking "Run OANDA analysis now" now shows the resulting saved analysis on the dashboard immediately, instead of requiring the user to open Analysis History and click "View in dashboard" separately.
