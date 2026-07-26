@@ -1,7 +1,9 @@
 import type { SafeAnalysis } from '../../domain/analysis';
 import type { DashboardState } from '../../application/buildDashboardState';
 import { formatPrice } from '../../lib/format';
+import type { MrEvaluationsListResult } from '../../serviceClient/localAnalysisService';
 import { MarketContextCard } from './MarketContextCard';
+import { MeanReversionStrategyCard } from './MeanReversionStrategyCard';
 import { NextActionCard } from './NextActionCard';
 import { SetupScoreCard } from './SetupScoreCard';
 import { WhyNoEntryCard } from './WhyNoEntryCard';
@@ -9,6 +11,8 @@ import { WhyNoEntryCard } from './WhyNoEntryCard';
 type AnalysisSidebarProps = {
   analysis: SafeAnalysis;
   dashboardState?: DashboardState;
+  mrEvaluationsList?: MrEvaluationsListResult | { kind: 'loading' } | null;
+  onOpenMrEvaluations?: () => void;
 };
 
 const uniqueItems = (items: string[]) => [...new Set(items.filter(Boolean))];
@@ -44,14 +48,15 @@ function nextSteps(state: DashboardState, fallback: string[]) {
   ]);
 }
 
-export function AnalysisSidebar({ analysis, dashboardState }: AnalysisSidebarProps) {
+export function AnalysisSidebar({
+  analysis,
+  dashboardState,
+  mrEvaluationsList,
+  onOpenMrEvaluations,
+}: AnalysisSidebarProps) {
   const action = dashboardState?.action ?? analysis.action;
   const rationale = dashboardState
-    ? uniqueItems([
-        ...dashboardState.reasons,
-        ...dashboardState.warnings,
-        ...analysis.whyNoEntry,
-      ])
+    ? uniqueItems([...dashboardState.reasons, ...dashboardState.warnings, ...analysis.whyNoEntry])
     : analysis.whyNoEntry;
   const actions = dashboardState
     ? nextSteps(dashboardState, analysis.whatToDoNext)
@@ -59,6 +64,10 @@ export function AnalysisSidebar({ analysis, dashboardState }: AnalysisSidebarPro
 
   return (
     <aside className="analysis-sidebar" aria-label="Setup analysis">
+      <MeanReversionStrategyCard
+        list={mrEvaluationsList ?? null}
+        onOpenHistory={onOpenMrEvaluations}
+      />
       <WhyNoEntryCard
         action={action}
         items={rationale}

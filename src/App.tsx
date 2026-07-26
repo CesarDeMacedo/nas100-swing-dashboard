@@ -9,7 +9,26 @@ import { parseCandleDataset } from './domain/candles';
 import { buildDashboardState } from './application/buildDashboardState';
 import { currentCandleDatasetSource } from './domain/fixtures';
 import { useDashboardStore } from './store/dashboardStore';
-import { localAnalysisService, type BacktestListResult, type BacktestReportResult, type HistoryResult, type LocalAnalysisServiceClient, type ManualRunResult, type MrEvaluationsListResult, type OandaPreviewCandle, type OandaPreviewData, type OandaPreviewResult, type OandaProviderStatus, type RunDetailResult, type SavedOandaDisplaySnapshot, type ServiceAvailability, type StrategyDetailResult, type StrategyListResult, type StrategyMutationResult, type StrategyParameters } from './serviceClient/localAnalysisService';
+import {
+  localAnalysisService,
+  type BacktestListResult,
+  type BacktestReportResult,
+  type HistoryResult,
+  type LocalAnalysisServiceClient,
+  type ManualRunResult,
+  type MrEvaluationsListResult,
+  type OandaPreviewCandle,
+  type OandaPreviewData,
+  type OandaPreviewResult,
+  type OandaProviderStatus,
+  type RunDetailResult,
+  type SavedOandaDisplaySnapshot,
+  type ServiceAvailability,
+  type StrategyDetailResult,
+  type StrategyListResult,
+  type StrategyMutationResult,
+  type StrategyParameters,
+} from './serviceClient/localAnalysisService';
 
 const candleTime = (candle: unknown): string | null => {
   if (!candle || typeof candle !== 'object') return null;
@@ -26,12 +45,18 @@ const mergeCandleSeries = (saved: unknown[], gap: unknown[], open: unknown | nul
     const time = candleTime(candle);
     if (time) byTime.set(time, candle);
   }
-  const merged = [...byTime.values()].sort((a, b) => Date.parse(candleTime(a) ?? '') - Date.parse(candleTime(b) ?? ''));
+  const merged = [...byTime.values()].sort(
+    (a, b) => Date.parse(candleTime(a) ?? '') - Date.parse(candleTime(b) ?? ''),
+  );
   return open ? [...merged, open] : merged;
 };
 
 // Lazy-loaded so the ~500kB lightweight-charts dependency is not part of the initial bundle.
-const OandaChartPreview = lazy(() => import('./components/OandaChartPreview').then((module) => ({ default: module.OandaChartPreview })));
+const OandaChartPreview = lazy(() =>
+  import('./components/OandaChartPreview').then((module) => ({
+    default: module.OandaChartPreview,
+  })),
+);
 
 type AppProps = {
   analysisSource?: unknown;
@@ -48,45 +73,104 @@ export default function App({
 }: AppProps) {
   const result = useMemo(() => parseAnalysis(analysisSource), [analysisSource]);
   const candleResult = useMemo(() => parseCandleDataset(candleSource), [candleSource]);
-  const dashboardState = useMemo(() => result.success && candleResult.success ? buildDashboardState(result.analysis, candleResult.dataset) : null, [result, candleResult]);
-  const useCalculatedDashboardState = analysisSource === currentAnalysisSource && candleSource === currentCandleDatasetSource;
+  const dashboardState = useMemo(
+    () =>
+      result.success && candleResult.success
+        ? buildDashboardState(result.analysis, candleResult.dataset)
+        : null,
+    [result, candleResult],
+  );
+  const useCalculatedDashboardState =
+    analysisSource === currentAnalysisSource && candleSource === currentCandleDatasetSource;
   const dashboardAnalysis = result.success ? result.analysis : null;
   const setReady = useDashboardStore((state) => state.setReady);
   const setError = useDashboardStore((state) => state.setError);
-  const [serviceAvailability, setServiceAvailability] = useState<'checking' | ServiceAvailability['kind']>('checking');
-  const [manualRunState, setManualRunState] = useState<'idle' | 'running' | ManualRunResult['kind']>('idle');
+  const [serviceAvailability, setServiceAvailability] = useState<
+    'checking' | ServiceAvailability['kind']
+  >('checking');
+  const [manualRunState, setManualRunState] = useState<
+    'idle' | 'running' | ManualRunResult['kind']
+  >('idle');
   const [manualRunResult, setManualRunResult] = useState<ManualRunResult | null>(null);
-  const [oandaManualRunState, setOandaManualRunState] = useState<'idle' | 'running' | ManualRunResult['kind']>('idle');
+  const [oandaManualRunState, setOandaManualRunState] = useState<
+    'idle' | 'running' | ManualRunResult['kind']
+  >('idle');
   const [oandaManualRunResult, setOandaManualRunResult] = useState<ManualRunResult | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [history, setHistory] = useState<HistoryResult | { kind: 'loading' } | null>(null);
   const [historyLimit, setHistoryLimit] = useState(10);
-  const [historyDetail, setHistoryDetail] = useState<RunDetailResult | { kind: 'loading' } | null>(null);
+  const [historyDetail, setHistoryDetail] = useState<RunDetailResult | { kind: 'loading' } | null>(
+    null,
+  );
   const [selectedHistoryRunKey, setSelectedHistoryRunKey] = useState<string | null>(null);
-  const [savedOandaSnapshot, setSavedOandaSnapshot] = useState<SavedOandaDisplaySnapshot | null>(null);
+  const [savedOandaSnapshot, setSavedOandaSnapshot] = useState<SavedOandaDisplaySnapshot | null>(
+    null,
+  );
   const [liveOpenCandle, setLiveOpenCandle] = useState<unknown>(null);
   const [gapCandles, setGapCandles] = useState<OandaPreviewCandle[]>([]);
   const [livePrice, setLivePrice] = useState<number | null>(null);
-  const [liveStatus, setLiveStatus] = useState<'connecting' | 'live' | 'stale' | 'offline' | null>(null);
+  const [liveStatus, setLiveStatus] = useState<'connecting' | 'live' | 'stale' | 'offline' | null>(
+    null,
+  );
   const [oandaPreview, setOandaPreview] = useState<OandaPreviewData | null>(null);
   const [oandaPreviewLoading, setOandaPreviewLoading] = useState(false);
   const [oandaPreviewError, setOandaPreviewError] = useState<string | null>(null);
   const [oandaStatus, setOandaStatus] = useState<'checking' | OandaProviderStatus | null>(null);
   const [strategiesOpen, setStrategiesOpen] = useState(false);
-  const [strategyList, setStrategyList] = useState<StrategyListResult | { kind: 'loading' } | null>(null);
-  const [strategyDetail, setStrategyDetail] = useState<StrategyDetailResult | { kind: 'loading' } | null>(null);
+  const [strategyList, setStrategyList] = useState<StrategyListResult | { kind: 'loading' } | null>(
+    null,
+  );
+  const [strategyDetail, setStrategyDetail] = useState<
+    StrategyDetailResult | { kind: 'loading' } | null
+  >(null);
   const [selectedStrategyId, setSelectedStrategyId] = useState<string | null>(null);
-  const [strategyCreateState, setStrategyCreateState] = useState<'idle' | 'running' | StrategyMutationResult['kind']>('idle');
-  const [strategyCreateResult, setStrategyCreateResult] = useState<StrategyMutationResult | null>(null);
+  const [strategyCreateState, setStrategyCreateState] = useState<
+    'idle' | 'running' | StrategyMutationResult['kind']
+  >('idle');
+  const [strategyCreateResult, setStrategyCreateResult] = useState<StrategyMutationResult | null>(
+    null,
+  );
   const [backtestsOpen, setBacktestsOpen] = useState(false);
-  const [backtestList, setBacktestList] = useState<BacktestListResult | { kind: 'loading' } | null>(null);
-  const [backtestDetail, setBacktestDetail] = useState<BacktestReportResult | { kind: 'loading' } | null>(null);
+  const [backtestList, setBacktestList] = useState<BacktestListResult | { kind: 'loading' } | null>(
+    null,
+  );
+  const [backtestDetail, setBacktestDetail] = useState<
+    BacktestReportResult | { kind: 'loading' } | null
+  >(null);
   const [selectedBacktestId, setSelectedBacktestId] = useState<string | null>(null);
   const [mrEvaluationsOpen, setMrEvaluationsOpen] = useState(false);
-  const [mrEvaluationsList, setMrEvaluationsList] = useState<MrEvaluationsListResult | { kind: 'loading' } | null>(null);
-  const savedAnalysisResult = useMemo(() => savedOandaSnapshot ? parseAnalysis(savedOandaSnapshot.analysis) : null, [savedOandaSnapshot]);
-  const savedCandleResult = useMemo(() => savedOandaSnapshot ? parseCandleDataset({ schemaVersion: '1.0.0', datasetId: `saved-oanda:${savedOandaSnapshot.instrument}:${savedOandaSnapshot.h4SourceCandleTime ?? 'unavailable'}`, description: 'Saved immutable OANDA H4 analysis snapshot.', isSynthetic: false, timezone: 'America/Toronto', instrument: savedOandaSnapshot.instrument, timeframe: 'H4', candles: mergeCandleSeries(savedOandaSnapshot.candles as unknown[], gapCandles, liveOpenCandle) }) : null, [savedOandaSnapshot, gapCandles, liveOpenCandle]);
-  const activeAnalysis = savedOandaSnapshot ? (savedAnalysisResult?.success ? savedAnalysisResult.analysis : null) : dashboardAnalysis;
+  const [mrEvaluationsList, setMrEvaluationsList] = useState<
+    MrEvaluationsListResult | { kind: 'loading' } | null
+  >(null);
+  const savedAnalysisResult = useMemo(
+    () => (savedOandaSnapshot ? parseAnalysis(savedOandaSnapshot.analysis) : null),
+    [savedOandaSnapshot],
+  );
+  const savedCandleResult = useMemo(
+    () =>
+      savedOandaSnapshot
+        ? parseCandleDataset({
+            schemaVersion: '1.0.0',
+            datasetId: `saved-oanda:${savedOandaSnapshot.instrument}:${savedOandaSnapshot.h4SourceCandleTime ?? 'unavailable'}`,
+            description: 'Saved immutable OANDA H4 analysis snapshot.',
+            isSynthetic: false,
+            timezone: 'America/Toronto',
+            instrument: savedOandaSnapshot.instrument,
+            timeframe: 'H4',
+            candles: mergeCandleSeries(
+              savedOandaSnapshot.candles as unknown[],
+              gapCandles,
+              liveOpenCandle,
+            ),
+          })
+        : null,
+    [savedOandaSnapshot, gapCandles, liveOpenCandle],
+  );
+  const activeAnalysis = savedOandaSnapshot
+    ? savedAnalysisResult?.success
+      ? savedAnalysisResult.analysis
+      : null
+    : dashboardAnalysis;
   const activeCandleResult = savedOandaSnapshot ? savedCandleResult! : candleResult;
 
   useEffect(() => {
@@ -119,6 +203,21 @@ export default function App({
     };
   }, [serviceAvailability, serviceClient]);
 
+  // Unlike history/strategies/backtests (only loaded when their panel is opened), the latest
+  // mean-reversion evaluation also feeds an always-visible sidebar card and chart overlay (see
+  // MeanReversionStrategyCard, mapMeanReversionPriceLines) — so it needs to load as soon as the
+  // service is available, not wait for the user to open the evaluation-history panel.
+  useEffect(() => {
+    if (serviceAvailability !== 'available' || !serviceClient.listMrEvaluations) return;
+    let active = true;
+    serviceClient.listMrEvaluations().then((result) => {
+      if (active) setMrEvaluationsList(result);
+    });
+    return () => {
+      active = false;
+    };
+  }, [serviceAvailability, serviceClient]);
+
   // On startup, show the most recently persisted OANDA report instead of mock, if one
   // exists — real data the user already has, no new OANDA API call. Falls back to mock
   // (unchanged default) when the service is unavailable or no OANDA report has ever been
@@ -132,7 +231,9 @@ export default function App({
     (async () => {
       const historyResult = await serviceClient.listRecentRuns(20);
       if (!active || historyResult.kind !== 'succeeded') return;
-      const latestOandaRun = historyResult.runs.find((item) => item.run.runKey.startsWith('oanda-v20:') && item.report !== null);
+      const latestOandaRun = historyResult.runs.find(
+        (item) => item.run.runKey.startsWith('oanda-v20:') && item.report !== null,
+      );
       if (!latestOandaRun) return;
       const detail = await serviceClient.getRunByKey(latestOandaRun.run.runKey);
       if (!active || detail.kind !== 'succeeded' || !detail.report.displaySnapshot) return;
@@ -145,7 +246,10 @@ export default function App({
   }, [serviceAvailability, serviceClient]);
 
   useEffect(() => {
-    if (!savedOandaSnapshot || !serviceClient.getOandaCandles) { setGapCandles([]); return; }
+    if (!savedOandaSnapshot || !serviceClient.getOandaCandles) {
+      setGapCandles([]);
+      return;
+    }
     let active = true;
     setGapCandles([]);
     const lastSavedTime = savedOandaSnapshot.h4SourceCandleTime;
@@ -157,7 +261,10 @@ export default function App({
       // SSE stream only ever carries the currently-open candle, never a backfill, so
       // without this the chart jumps straight from the snapshot's last candle to
       // whatever's open now — silently skipping every candle that closed in between.
-      const missing = result.data.candles.filter((candle) => candle.isClosed && (lastSavedMs === null || Date.parse(candle.time) > lastSavedMs));
+      const missing = result.data.candles.filter(
+        (candle) =>
+          candle.isClosed && (lastSavedMs === null || Date.parse(candle.time) > lastSavedMs),
+      );
       setGapCandles(missing);
     });
     return () => {
@@ -177,7 +284,10 @@ export default function App({
         // open candle is now closed, so fold it into the gap-fill list instead of losing
         // it the moment the new open candle replaces it.
         if (previous && previousTime && incomingTime && previousTime !== incomingTime) {
-          setGapCandles((gap) => [...gap, { ...(previous as object), isClosed: true } as OandaPreviewCandle]);
+          setGapCandles((gap) => [
+            ...gap,
+            { ...(previous as object), isClosed: true } as OandaPreviewCandle,
+          ]);
         }
         return incoming ?? null;
       });
@@ -185,17 +295,27 @@ export default function App({
     const close = serviceClient.subscribeOandaLiveH4((event) => {
       if (event.type === 'snapshot') {
         applyOpenCandle(event.payload.openCandle ?? null);
-        setLivePrice(typeof event.payload.currentPrice === 'number' ? event.payload.currentPrice : null);
+        setLivePrice(
+          typeof event.payload.currentPrice === 'number' ? event.payload.currentPrice : null,
+        );
         setLiveStatus('live');
       } else if (event.type === 'candle') {
         applyOpenCandle(event.payload.candle ?? null);
         setLiveStatus('live');
       } else if (event.type === 'price') {
-        setLivePrice(typeof event.payload.currentPrice === 'number' ? event.payload.currentPrice : null);
+        setLivePrice(
+          typeof event.payload.currentPrice === 'number' ? event.payload.currentPrice : null,
+        );
         setLiveStatus('live');
-      } else if (event.type === 'error') setLiveStatus((event.payload.state === 'stale' ? 'stale' : 'offline'));
+      } else if (event.type === 'error')
+        setLiveStatus(event.payload.state === 'stale' ? 'stale' : 'offline');
     });
-    return () => { close(); setLiveOpenCandle(null); setLivePrice(null); setLiveStatus(null); };
+    return () => {
+      close();
+      setLiveOpenCandle(null);
+      setLivePrice(null);
+      setLiveStatus(null);
+    };
   }, [savedOandaSnapshot, serviceClient]);
 
   const runManualFixture = async () => {
@@ -241,7 +361,16 @@ export default function App({
 
   const viewSavedOandaAnalysis = (snapshot: SavedOandaDisplaySnapshot) => {
     const analysis = parseAnalysis(snapshot.analysis);
-    const candles = parseCandleDataset({ schemaVersion: '1.0.0', datasetId: `saved-oanda:${snapshot.instrument}:${snapshot.h4SourceCandleTime ?? 'unavailable'}`, description: 'Saved immutable OANDA H4 analysis snapshot.', isSynthetic: false, timezone: 'America/Toronto', instrument: snapshot.instrument, timeframe: 'H4', candles: snapshot.candles });
+    const candles = parseCandleDataset({
+      schemaVersion: '1.0.0',
+      datasetId: `saved-oanda:${snapshot.instrument}:${snapshot.h4SourceCandleTime ?? 'unavailable'}`,
+      description: 'Saved immutable OANDA H4 analysis snapshot.',
+      isSynthetic: false,
+      timezone: 'America/Toronto',
+      instrument: snapshot.instrument,
+      timeframe: 'H4',
+      candles: snapshot.candles,
+    });
     if (!analysis.success || !candles.success) return;
     setSavedOandaSnapshot(snapshot);
     setHistoryOpen(false);
@@ -274,13 +403,20 @@ export default function App({
     if (result.kind === 'succeeded') void loadStrategies();
   };
 
-  const createStrategyVersion = async (strategyId: string, name: string, parameters: StrategyParameters) => {
+  const createStrategyVersion = async (
+    strategyId: string,
+    name: string,
+    parameters: StrategyParameters,
+  ) => {
     if (!serviceClient.createStrategyVersion) return;
     setStrategyCreateState('running');
     const result = await serviceClient.createStrategyVersion(strategyId, name, parameters);
     setStrategyCreateResult(result);
     setStrategyCreateState(result.kind);
-    if (result.kind === 'succeeded') { void loadStrategies(); void selectStrategy(strategyId); }
+    if (result.kind === 'succeeded') {
+      void loadStrategies();
+      void selectStrategy(strategyId);
+    }
   };
 
   const activateStrategyVersion = async (strategyId: string, version: number) => {
@@ -321,7 +457,8 @@ export default function App({
 
   const loadOandaPreview = async () => {
     if (!serviceClient.getOandaCandles) return;
-    setOandaPreviewLoading(true); setOandaPreviewError(null);
+    setOandaPreviewLoading(true);
+    setOandaPreviewError(null);
     const result: OandaPreviewResult = await serviceClient.getOandaCandles(250);
     if (result.kind === 'succeeded') setOandaPreview(result.data);
     else setOandaPreviewError(result.message);
@@ -331,8 +468,23 @@ export default function App({
   return (
     <AppShell>
       {oandaPreview ? (
-        <Suspense fallback={<div className="chart-panel-loading" role="status">Loading chart…</div>}>
-          <OandaChartPreview data={oandaPreview} loading={oandaPreviewLoading} error={oandaPreviewError} onRefresh={loadOandaPreview} onBack={() => { setOandaPreview(null); setOandaPreviewError(null); }} />
+        <Suspense
+          fallback={
+            <div className="chart-panel-loading" role="status">
+              Loading chart…
+            </div>
+          }
+        >
+          <OandaChartPreview
+            data={oandaPreview}
+            loading={oandaPreviewLoading}
+            error={oandaPreviewError}
+            onRefresh={loadOandaPreview}
+            onBack={() => {
+              setOandaPreview(null);
+              setOandaPreviewError(null);
+            }}
+          />
         </Suspense>
       ) : null}
       {loading ? <LoadingState /> : null}
@@ -343,7 +495,11 @@ export default function App({
         <Dashboard
           analysis={activeAnalysis}
           candleResult={activeCandleResult}
-          dashboardState={!savedOandaSnapshot && useCalculatedDashboardState ? (dashboardState ?? undefined) : undefined}
+          dashboardState={
+            !savedOandaSnapshot && useCalculatedDashboardState
+              ? (dashboardState ?? undefined)
+              : undefined
+          }
           serviceAvailability={serviceAvailability}
           manualRunState={manualRunState}
           manualRunResult={manualRunResult}
@@ -359,13 +515,24 @@ export default function App({
           onChangeHistoryLimit={(limit) => void loadHistory(limit)}
           onSelectHistoryRun={selectHistoryRun}
           onViewHistoryInDashboard={viewSavedOandaAnalysis}
-          savedOandaProvenance={savedOandaSnapshot ? `OANDA ${savedOandaSnapshot.environment.toUpperCase()}` : null}
+          savedOandaProvenance={
+            savedOandaSnapshot ? `OANDA ${savedOandaSnapshot.environment.toUpperCase()}` : null
+          }
           savedSourceCandleTime={savedOandaSnapshot?.h4SourceCandleTime ?? null}
           onReturnToMock={savedOandaSnapshot ? () => setSavedOandaSnapshot(null) : undefined}
           liveObservationStatus={liveStatus}
           liveObservationPrice={livePrice}
           onOpenOandaPreview={() => void loadOandaPreview()}
-          savedMetadata={savedOandaSnapshot ? { provenance: `OANDA ${savedOandaSnapshot.environment.toUpperCase()}`, sourceTime: savedOandaSnapshot.h4SourceCandleTime, latestPrice: livePrice, liveStatus } : undefined}
+          savedMetadata={
+            savedOandaSnapshot
+              ? {
+                  provenance: `OANDA ${savedOandaSnapshot.environment.toUpperCase()}`,
+                  sourceTime: savedOandaSnapshot.h4SourceCandleTime,
+                  latestPrice: livePrice,
+                  liveStatus,
+                }
+              : undefined
+          }
           oandaStatus={oandaStatus ?? undefined}
           oandaManualRunState={oandaManualRunState}
           oandaManualRunResult={oandaManualRunResult}
@@ -381,8 +548,12 @@ export default function App({
           onRefreshStrategies={() => void loadStrategies()}
           onSelectStrategy={(strategyId) => void selectStrategy(strategyId)}
           onCreateStrategy={(name, parameters) => void createStrategy(name, parameters)}
-          onCreateStrategyVersion={(strategyId, name, parameters) => void createStrategyVersion(strategyId, name, parameters)}
-          onActivateStrategyVersion={(strategyId, version) => void activateStrategyVersion(strategyId, version)}
+          onCreateStrategyVersion={(strategyId, name, parameters) =>
+            void createStrategyVersion(strategyId, name, parameters)
+          }
+          onActivateStrategyVersion={(strategyId, version) =>
+            void activateStrategyVersion(strategyId, version)
+          }
           backtestsOpen={backtestsOpen}
           backtestList={backtestList}
           backtestDetail={backtestDetail}

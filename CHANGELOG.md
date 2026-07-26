@@ -7,6 +7,30 @@
 - New CLI runner `scripts/backtest/runMeanReversionBacktest.ts` (single-pass over cached D or H4 candles; indicators always warm up on pre-range history) persisting to a new `backtest_mr_trades` table in the harness SQLite (separate from `backtest_signals`, whose NOT NULL stop/target columns encode pipeline geometry).
 - First results on NAS100 (full cached history, no cost model, entry/exit at bar close): RSI-2 daily 32 trades / 81% win / PF 2.36; Double Seven daily 80 trades / 76% win / PF 2.54 — both in line with the published QQQ/SPY numbers. The H4 transfer test degrades materially (RSI-2 H4: PF 1.12; Double Seven H4: PF 1.64 with thin +0.21%/trade), consistent with the literature being a daily-bar phenomenon.
 
+## Mean-Reversion Strategy Visibility (Sidebar Card + Chart Overlay)
+
+- Diagnosis: the live Double Seven strategy's status was only reachable through a modal opened
+  via a header button (`MeanReversionPanel`), showed raw ISO-8601 timestamps, and had zero
+  presence on the H4 chart the user actually watches — everything else on the dashboard
+  (action banner, setup score, sidebar cards) is built entirely around the dormant pipeline
+  strategy, so the strategy actually being traded had no visible home.
+- Added a persistent `MeanReversionStrategyCard` at the top of the sidebar, always visible
+  (not behind a modal): current signal (ENTER/HOLD/EXIT/FLAT, color-coded), reference
+  price/date, stop, suggested position size, and last-evaluated time, all in human-readable
+  Toronto time via `formatTorontoTime` — plus a link into the existing panel for full history.
+  `App.tsx` now fetches the latest evaluation as soon as the service is available (previously
+  only fetched on-demand when the modal was opened).
+- Added `mapMeanReversionPriceLines` (`chartAdapter.ts`): draws the MR entry reference and stop
+  as extra price lines directly on the H4 chart, in a violet/magenta distinct from the
+  pipeline's own entry/invalidation/stop/target palette, and only while a position is actually
+  tracked (ENTER/HOLD) — not stale after EXIT/FLAT.
+- `MeanReversionPanel` relabeled as the evaluation-history audit view (its raw-timestamp rows
+  now also use `formatTorontoTime`) now that the live status has its own persistent home;
+  `describeMrPositionSize`/`num` extracted from it so the card and panel never describe the
+  same evaluation differently. Verified end-to-end in a real browser session (Vite dev server):
+  card renders correctly, chart shows both new price lines, history modal opens with the
+  updated copy, zero console errors.
+
 ## Configurable MR Risk Per Trade (Desk Rules Update)
 
 - Added `NAS100_MR_RISK_PER_TRADE_PCT` (account-level env var, sanity-capped at 5) feeding the

@@ -3,7 +3,11 @@ import { lazy, Suspense } from 'react';
 import type { SafeAnalysis } from '../domain/analysis';
 import type { CandleDatasetParseResult } from '../domain/candles';
 import type { DashboardState } from '../application/buildDashboardState';
-import type { ManualRunResult, OandaProviderStatus, ServiceAvailability } from '../serviceClient/localAnalysisService';
+import type {
+  ManualRunResult,
+  OandaProviderStatus,
+  ServiceAvailability,
+} from '../serviceClient/localAnalysisService';
 import { AnalysisSidebar } from './sidebar/AnalysisSidebar';
 import { DashboardHeader } from './DashboardHeader';
 import { MetricsFooter } from './MetricsFooter';
@@ -13,10 +17,25 @@ import { AnalysisHistoryPanel } from './AnalysisHistoryPanel';
 import { StrategyManagerPanel } from './StrategyManagerPanel';
 import { BacktestResultsPanel } from './BacktestResultsPanel';
 import { MeanReversionPanel } from './MeanReversionPanel';
-import type { BacktestListResult, BacktestReportResult, HistoryResult, MrEvaluationsListResult, RunDetailResult, SavedOandaDisplaySnapshot, StrategyDetailResult, StrategyListResult, StrategyMutationResult, StrategyParameters } from '../serviceClient/localAnalysisService';
+import type {
+  BacktestListResult,
+  BacktestReportResult,
+  HistoryResult,
+  MrEvaluationsListResult,
+  RunDetailResult,
+  SavedOandaDisplaySnapshot,
+  StrategyDetailResult,
+  StrategyListResult,
+  StrategyMutationResult,
+  StrategyParameters,
+} from '../serviceClient/localAnalysisService';
 
 // Lazy-loaded so the ~500kB lightweight-charts dependency is not part of the initial bundle.
-const CandlestickChartPanel = lazy(() => import('./chart/CandlestickChartPanel').then((module) => ({ default: module.CandlestickChartPanel })));
+const CandlestickChartPanel = lazy(() =>
+  import('./chart/CandlestickChartPanel').then((module) => ({
+    default: module.CandlestickChartPanel,
+  })),
+);
 
 type DashboardProps = {
   analysis: SafeAnalysis;
@@ -43,7 +62,12 @@ type DashboardProps = {
   liveObservationStatus?: string | null;
   liveObservationPrice?: number | null;
   onOpenOandaPreview?: () => void;
-  savedMetadata?: { provenance: string; sourceTime: string | null; latestPrice: number | null; liveStatus: string | null };
+  savedMetadata?: {
+    provenance: string;
+    sourceTime: string | null;
+    latestPrice: number | null;
+    liveStatus: string | null;
+  };
   oandaStatus?: 'checking' | OandaProviderStatus;
   oandaManualRunState?: 'idle' | 'running' | ManualRunResult['kind'];
   oandaManualRunResult?: ManualRunResult | null;
@@ -59,7 +83,11 @@ type DashboardProps = {
   onRefreshStrategies?: () => void;
   onSelectStrategy?: (strategyId: string) => void;
   onCreateStrategy?: (name: string, parameters: StrategyParameters) => void;
-  onCreateStrategyVersion?: (strategyId: string, name: string, parameters: StrategyParameters) => void;
+  onCreateStrategyVersion?: (
+    strategyId: string,
+    name: string,
+    parameters: StrategyParameters,
+  ) => void;
   onActivateStrategyVersion?: (strategyId: string, version: number) => void;
   backtestsOpen?: boolean;
   backtestList?: BacktestListResult | { kind: 'loading' } | null;
@@ -76,7 +104,63 @@ type DashboardProps = {
   onRefreshMrEvaluations?: () => void;
 };
 
-export function Dashboard({ analysis, candleResult, dashboardState, serviceAvailability, manualRunState, manualRunResult, onManualRun, historyOpen = false, history, historyDetail, selectedHistoryRunKey = null, onOpenHistory, onCloseHistory, onRefreshHistory, historyLimit, onChangeHistoryLimit, onSelectHistoryRun, onViewHistoryInDashboard, savedOandaProvenance, savedSourceCandleTime, onReturnToMock, liveObservationStatus, liveObservationPrice, onOpenOandaPreview, savedMetadata, oandaStatus, oandaManualRunState, oandaManualRunResult, onRunOandaNow, strategiesOpen = false, strategyList, strategyDetail, selectedStrategyId = null, strategyCreateState = 'idle', strategyCreateResult = null, onOpenStrategies, onCloseStrategies, onRefreshStrategies, onSelectStrategy, onCreateStrategy, onCreateStrategyVersion, onActivateStrategyVersion, backtestsOpen = false, backtestList, backtestDetail, selectedBacktestId = null, onOpenBacktests, onCloseBacktests, onRefreshBacktests, onSelectBacktest, mrEvaluationsOpen = false, mrEvaluationsList, onOpenMrEvaluations, onCloseMrEvaluations, onRefreshMrEvaluations }: DashboardProps) {
+export function Dashboard({
+  analysis,
+  candleResult,
+  dashboardState,
+  serviceAvailability,
+  manualRunState,
+  manualRunResult,
+  onManualRun,
+  historyOpen = false,
+  history,
+  historyDetail,
+  selectedHistoryRunKey = null,
+  onOpenHistory,
+  onCloseHistory,
+  onRefreshHistory,
+  historyLimit,
+  onChangeHistoryLimit,
+  onSelectHistoryRun,
+  onViewHistoryInDashboard,
+  savedOandaProvenance,
+  savedSourceCandleTime,
+  onReturnToMock,
+  liveObservationStatus,
+  liveObservationPrice,
+  onOpenOandaPreview,
+  savedMetadata,
+  oandaStatus,
+  oandaManualRunState,
+  oandaManualRunResult,
+  onRunOandaNow,
+  strategiesOpen = false,
+  strategyList,
+  strategyDetail,
+  selectedStrategyId = null,
+  strategyCreateState = 'idle',
+  strategyCreateResult = null,
+  onOpenStrategies,
+  onCloseStrategies,
+  onRefreshStrategies,
+  onSelectStrategy,
+  onCreateStrategy,
+  onCreateStrategyVersion,
+  onActivateStrategyVersion,
+  backtestsOpen = false,
+  backtestList,
+  backtestDetail,
+  selectedBacktestId = null,
+  onOpenBacktests,
+  onCloseBacktests,
+  onRefreshBacktests,
+  onSelectBacktest,
+  mrEvaluationsOpen = false,
+  mrEvaluationsList,
+  onOpenMrEvaluations,
+  onCloseMrEvaluations,
+  onRefreshMrEvaluations,
+}: DashboardProps) {
   const state = dashboardState;
 
   return (
@@ -122,19 +206,53 @@ export function Dashboard({ analysis, candleResult, dashboardState, serviceAvail
         />
       </header>
       <div className="dashboard-main">
-        <Suspense fallback={<div className="chart-panel-loading" role="status">Loading chart…</div>}>
+        <Suspense
+          fallback={
+            <div className="chart-panel-loading" role="status">
+              Loading chart…
+            </div>
+          }
+        >
           <CandlestickChartPanel
             analysis={analysis}
             candleResult={candleResult}
             dashboardState={state}
             savedMetadata={savedMetadata}
+            mrEvaluation={
+              mrEvaluationsList?.kind === 'succeeded'
+                ? (mrEvaluationsList.evaluations[0] ?? null)
+                : null
+            }
           />
         </Suspense>
-        <AnalysisSidebar analysis={analysis} dashboardState={state} />
+        <AnalysisSidebar
+          analysis={analysis}
+          dashboardState={state}
+          mrEvaluationsList={mrEvaluationsList}
+          onOpenMrEvaluations={onOpenMrEvaluations}
+        />
       </div>
       <MetricsFooter analysis={analysis} dashboardState={state} />
-      {onCloseHistory && onRefreshHistory && onSelectHistoryRun ? <AnalysisHistoryPanel open={historyOpen} history={history ?? null} detail={historyDetail ?? null} selectedRunKey={selectedHistoryRunKey} onClose={onCloseHistory} onRefresh={onRefreshHistory} historyLimit={historyLimit} onChangeHistoryLimit={onChangeHistoryLimit} onSelect={onSelectHistoryRun} onViewInDashboard={onViewHistoryInDashboard} /> : null}
-      {onCloseStrategies && onRefreshStrategies && onSelectStrategy && onCreateStrategy && onCreateStrategyVersion && onActivateStrategyVersion ? (
+      {onCloseHistory && onRefreshHistory && onSelectHistoryRun ? (
+        <AnalysisHistoryPanel
+          open={historyOpen}
+          history={history ?? null}
+          detail={historyDetail ?? null}
+          selectedRunKey={selectedHistoryRunKey}
+          onClose={onCloseHistory}
+          onRefresh={onRefreshHistory}
+          historyLimit={historyLimit}
+          onChangeHistoryLimit={onChangeHistoryLimit}
+          onSelect={onSelectHistoryRun}
+          onViewInDashboard={onViewHistoryInDashboard}
+        />
+      ) : null}
+      {onCloseStrategies &&
+      onRefreshStrategies &&
+      onSelectStrategy &&
+      onCreateStrategy &&
+      onCreateStrategyVersion &&
+      onActivateStrategyVersion ? (
         <StrategyManagerPanel
           open={strategiesOpen}
           list={strategyList ?? null}
@@ -151,10 +269,23 @@ export function Dashboard({ analysis, candleResult, dashboardState, serviceAvail
         />
       ) : null}
       {onCloseBacktests && onRefreshBacktests && onSelectBacktest ? (
-        <BacktestResultsPanel open={backtestsOpen} list={backtestList ?? null} detail={backtestDetail ?? null} selectedRunId={selectedBacktestId} onClose={onCloseBacktests} onRefresh={onRefreshBacktests} onSelect={onSelectBacktest} />
+        <BacktestResultsPanel
+          open={backtestsOpen}
+          list={backtestList ?? null}
+          detail={backtestDetail ?? null}
+          selectedRunId={selectedBacktestId}
+          onClose={onCloseBacktests}
+          onRefresh={onRefreshBacktests}
+          onSelect={onSelectBacktest}
+        />
       ) : null}
       {onCloseMrEvaluations && onRefreshMrEvaluations ? (
-        <MeanReversionPanel open={mrEvaluationsOpen} list={mrEvaluationsList ?? null} onClose={onCloseMrEvaluations} onRefresh={onRefreshMrEvaluations} />
+        <MeanReversionPanel
+          open={mrEvaluationsOpen}
+          list={mrEvaluationsList ?? null}
+          onClose={onCloseMrEvaluations}
+          onRefresh={onRefreshMrEvaluations}
+        />
       ) : null}
     </div>
   );

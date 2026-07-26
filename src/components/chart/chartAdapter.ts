@@ -3,6 +3,14 @@ import type { CandlestickData, UTCTimestamp } from 'lightweight-charts';
 import type { Candle } from '../../domain/candles';
 import type { SafeAnalysis } from '../../domain/analysis';
 import { formatPrice } from '../../lib/format';
+import type { MeanReversionEvaluation } from '../../serviceClient/localAnalysisService';
+
+/** Deliberately outside ChartPalette: the mean-reversion overlay is a visually distinct system
+ * from the pipeline's own entry/invalidation/stop/target lines (drawn from `mapPriceLines`) —
+ * a violet neither `positive`/`negative`/`warning`/`info`/`neutral` uses, so the two strategies'
+ * lines never get mistaken for one another on the same H4 chart. */
+const MR_ENTRY_COLOR = '#b388ff';
+const MR_STOP_COLOR = '#e56399';
 
 export type ChartPalette = {
   positive: string;
@@ -37,9 +45,23 @@ export type PriceLineModel = {
 };
 
 export function selectVisibleSavedLevels(analysis: SafeAnalysis, limit = 3) {
-  const supports = [...analysis.supportZones].filter((zone) => zone.high <= analysis.currentPrice).sort((a, b) => b.high - a.high).slice(0, limit);
-  const resistances = [...analysis.resistanceZones].filter((zone) => zone.low >= analysis.currentPrice).sort((a, b) => a.low - b.low).slice(0, limit);
-  return { supports, resistances, hiddenCount: analysis.supportZones.length + analysis.resistanceZones.length - supports.length - resistances.length };
+  const supports = [...analysis.supportZones]
+    .filter((zone) => zone.high <= analysis.currentPrice)
+    .sort((a, b) => b.high - a.high)
+    .slice(0, limit);
+  const resistances = [...analysis.resistanceZones]
+    .filter((zone) => zone.low >= analysis.currentPrice)
+    .sort((a, b) => a.low - b.low)
+    .slice(0, limit);
+  return {
+    supports,
+    resistances,
+    hiddenCount:
+      analysis.supportZones.length +
+      analysis.resistanceZones.length -
+      supports.length -
+      resistances.length,
+  };
 }
 
 export const toUtcTimestamp = (timestamp: string) =>
@@ -169,6 +191,42 @@ export function mapPriceLines(
       lineWidth: 1,
     });
   });
+
+  return lines;
+}
+
+/** Draws the live mean-reversion strategy's entry reference and stop directly on the H4 chart,
+ * only while a position is actually tracked (ENTER/HOLD) — FLAT/EXIT would otherwise leave a
+ * stale entry/stop line pointing at a trade that's already closed. `null`/`undefined` (no
+ * active MR strategy, e.g. the mock dashboard) draws nothing. */
+export function mapMeanReversionPriceLines(
+  evaluation: MeanReversionEvaluation | null | undefined,
+): PriceLineModel[] {
+  if (!evaluation || (evaluation.signal !== 'ENTER' && evaluation.signal !== 'HOLD')) return [];
+
+  const lines: PriceLineModel[] = [
+    {
+      id: 'mr-entry',
+      price: evaluation.referenceClose,
+      title: 'MR entry',
+      color: MR_ENTRY_COLOR,
+      lineStyle: 'dashed',
+      axisLabelVisible: true,
+      lineWidth: 2,
+    },
+  ];
+
+  if (evaluation.stopPrice !== null) {
+    lines.push({
+      id: 'mr-stop',
+      price: evaluation.stopPrice,
+      title: 'MR stop',
+      color: MR_STOP_COLOR,
+      lineStyle: 'dashed',
+      axisLabelVisible: true,
+      lineWidth: 1,
+    });
+  }
 
   return lines;
 }

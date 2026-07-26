@@ -4,11 +4,18 @@ import type { SafeAnalysis } from '../../domain/analysis';
 import type { DashboardState } from '../../application/buildDashboardState';
 import type { CandleDataset, CandleDatasetParseResult } from '../../domain/candles';
 import { formatPrice } from '../../lib/format';
+import type { MeanReversionEvaluation } from '../../serviceClient/localAnalysisService';
 import { ChartHeader } from './ChartHeader';
 import { ChartLegend } from './ChartLegend';
 import { ChartStatusOverlay } from './ChartStatusOverlay';
 import { FinancialChart, type FinancialChartHandle } from './FinancialChart';
-import { mapPriceLines, mapPriceZones, selectVisibleSavedLevels, type ChartPalette } from './chartAdapter';
+import {
+  mapMeanReversionPriceLines,
+  mapPriceLines,
+  mapPriceZones,
+  selectVisibleSavedLevels,
+  type ChartPalette,
+} from './chartAdapter';
 
 const downloadChartPng = (canvas: HTMLCanvasElement, instrument: string) => {
   const link = document.createElement('a');
@@ -21,7 +28,17 @@ type CandlestickChartPanelProps = {
   analysis: SafeAnalysis;
   candleResult: CandleDatasetParseResult;
   dashboardState?: DashboardState;
-  savedMetadata?: { provenance: string; sourceTime: string | null; latestPrice: number | null; liveStatus: string | null };
+  savedMetadata?: {
+    provenance: string;
+    sourceTime: string | null;
+    latestPrice: number | null;
+    liveStatus: string | null;
+  };
+  /** Latest live evaluation of the active mean-reversion strategy (Double Seven/RSI-2), if any
+   * — drawn as extra price lines on the same H4 chart (a distinct color from the pipeline's own
+   * entry/stop lines) so the strategy the user actually trades has a visible home on the chart
+   * they already watch, not just in the sidebar card or the history panel. */
+  mrEvaluation?: MeanReversionEvaluation | null;
 };
 
 const chartPalette: ChartPalette = {
@@ -39,11 +56,18 @@ function ValidCandlestickChart({
   dataset,
   dashboardState,
   savedMetadata,
+  mrEvaluation,
 }: {
   analysis: SafeAnalysis;
   dataset: CandleDataset;
   dashboardState?: DashboardState;
-  savedMetadata?: { provenance: string; sourceTime: string | null; latestPrice: number | null; liveStatus: string | null };
+  savedMetadata?: {
+    provenance: string;
+    sourceTime: string | null;
+    latestPrice: number | null;
+    liveStatus: string | null;
+  };
+  mrEvaluation?: MeanReversionEvaluation | null;
 }) {
   const [resetKey, setResetKey] = useState(0);
   const chartHandleRef = useRef<FinancialChartHandle>(null);
@@ -58,16 +82,32 @@ function ValidCandlestickChart({
       } as SafeAnalysis)
     : analysis;
   const isSavedOanda = !dataset.isSynthetic && analysis.dataProvider === 'OANDA v20';
-  const selectedLevels = isSavedOanda ? selectVisibleSavedLevels(chartAnalysis) : { supports: chartAnalysis.supportZones, resistances: chartAnalysis.resistanceZones, hiddenCount: 0 };
+  const selectedLevels = isSavedOanda
+    ? selectVisibleSavedLevels(chartAnalysis)
+    : {
+        supports: chartAnalysis.supportZones,
+        resistances: chartAnalysis.resistanceZones,
+        hiddenCount: 0,
+      };
   const visibleSupports = selectedLevels.supports;
   const visibleResistances = selectedLevels.resistances;
-  const visibleAnalysis = { ...chartAnalysis, supportZones: visibleSupports, resistanceZones: visibleResistances };
+  const visibleAnalysis = {
+    ...chartAnalysis,
+    supportZones: visibleSupports,
+    resistanceZones: visibleResistances,
+  };
   const hiddenLevelCount = selectedLevels.hiddenCount;
   const latestCandle = dataset.candles.at(-1);
   const zones = useMemo(() => mapPriceZones(visibleAnalysis, chartPalette), [visibleAnalysis]);
   const priceLines = useMemo(
-    () => (latestCandle ? mapPriceLines(visibleAnalysis, latestCandle.close, chartPalette) : []),
-    [visibleAnalysis, latestCandle],
+    () =>
+      latestCandle
+        ? [
+            ...mapPriceLines(visibleAnalysis, latestCandle.close, chartPalette),
+            ...mapMeanReversionPriceLines(mrEvaluation),
+          ]
+        : [],
+    [visibleAnalysis, latestCandle, mrEvaluation],
   );
 
   if (!latestCandle) return null;
@@ -90,7 +130,9 @@ function ValidCandlestickChart({
         }}
         savedMetadata={savedMetadata}
       />
-      <p className="chart-navigation-hint">Scroll to zoom · Drag to pan · Double-click scale to reset</p>
+      <p className="chart-navigation-hint">
+        Scroll to zoom · Drag to pan · Double-click scale to reset
+      </p>
       <div className="chart-stage" data-testid="financial-chart-stage">
         <FinancialChart
           ref={chartHandleRef}
@@ -127,7 +169,9 @@ function ValidCandlestickChart({
           />
         ) : null}
         <span data-testid="current-price-marker">{formatPrice(analysis.currentPrice)}</span>
-        {chartAnalysis.stop !== undefined ? <span>Stop {formatPrice(chartAnalysis.stop)}</span> : null}
+        {chartAnalysis.stop !== undefined ? (
+          <span>Stop {formatPrice(chartAnalysis.stop)}</span>
+        ) : null}
         {chartAnalysis.targets.map((target, index) => (
           <span key={`target-summary-${target}`}>
             Target {index + 1} {formatPrice(target)}
@@ -141,7 +185,13 @@ function ValidCandlestickChart({
   );
 }
 
-export function CandlestickChartPanel({ analysis, candleResult, dashboardState, savedMetadata }: CandlestickChartPanelProps) {
+export function CandlestickChartPanel({
+  analysis,
+  candleResult,
+  dashboardState,
+  savedMetadata,
+  mrEvaluation,
+}: CandlestickChartPanelProps) {
   if (!candleResult.success) {
     return (
       <section className="chart-panel" aria-label={`${analysis.instrument} H4 chart unavailable`}>
@@ -167,6 +217,7 @@ export function CandlestickChartPanel({ analysis, candleResult, dashboardState, 
       dataset={candleResult.dataset}
       dashboardState={dashboardState}
       savedMetadata={savedMetadata}
+      mrEvaluation={mrEvaluation}
     />
   );
 }
