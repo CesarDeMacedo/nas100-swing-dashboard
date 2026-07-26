@@ -289,6 +289,9 @@ export type MeanReversionEvaluation = {
   referenceClose: number;
   signal: MeanReversionSignal;
   stopPrice: number | null;
+  /** 'double7' only, while a position is tracked: the closing price the next bar would need to
+   * reach or exceed to trigger the strategy's signal exit — see meanReversionRun.ts. */
+  exitWatchPrice: number | null;
   atr: number | null;
   smaFilterValue: number | null;
   aboveSmaFilter: boolean | null;
@@ -447,7 +450,10 @@ const isMeanReversionEvaluation = (value: unknown): value is MeanReversionEvalua
     typeof evaluation.strategyConfigId === 'string' &&
     typeof evaluation.instrument === 'string' &&
     (evaluation.timeframe === 'D' || evaluation.timeframe === 'H4') &&
-    (evaluation.signal === 'ENTER' || evaluation.signal === 'HOLD' || evaluation.signal === 'EXIT' || evaluation.signal === 'FLAT') &&
+    (evaluation.signal === 'ENTER' ||
+      evaluation.signal === 'HOLD' ||
+      evaluation.signal === 'EXIT' ||
+      evaluation.signal === 'FLAT') &&
     typeof evaluation.referenceClose === 'number'
   );
 };
@@ -940,7 +946,9 @@ export function createLocalAnalysisServiceClient(
           !Array.isArray(payload.evaluations) ||
           !payload.evaluations.every(isMeanReversionEvaluation)
         )
-          return invalidResponse('Local service returned an invalid mean-reversion evaluations response.');
+          return invalidResponse(
+            'Local service returned an invalid mean-reversion evaluations response.',
+          );
         return { kind: 'succeeded', evaluations: payload.evaluations };
       } catch {
         return {

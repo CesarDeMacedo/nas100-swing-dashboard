@@ -1,5 +1,6 @@
 import {
   DEFAULT_MEAN_REVERSION_PARAMETERS,
+  computeDouble7ExitWatchPrice,
   runMeanReversionBacktest,
   simpleMovingAverage,
   wilderAtr,
@@ -42,6 +43,39 @@ describe('mean reversion indicators', () => {
     expect(atr[1]).toBeNull();
     // TR(1)=max(2, |103-100|, |101-100|)=3, TR(2)=max(2, |105-102|, |103-102|)=3 -> seed 3.
     expect(atr[2]).toBeCloseTo(3, 6);
+  });
+});
+
+describe('computeDouble7ExitWatchPrice', () => {
+  it('is the max of the trailing (lookback - 1) closes — what the next bar must reach or exceed to exit', () => {
+    // lookback 3 -> window is the last 2 closes (105, 103).
+    expect(computeDouble7ExitWatchPrice([100, 102, 105, 103], 3)).toBe(105);
+  });
+
+  it('returns null without enough closed history for the window yet', () => {
+    expect(computeDouble7ExitWatchPrice([100, 102], 7)).toBeNull();
+  });
+
+  it('returns null for a lookback of 1 or less (an empty comparison window by construction)', () => {
+    expect(computeDouble7ExitWatchPrice([100, 102, 105], 1)).toBeNull();
+    expect(computeDouble7ExitWatchPrice([100, 102, 105], 0)).toBeNull();
+  });
+
+  it('matches the walker exactly: computed against the entry bar, it equals the close that triggers the real exit trade', () => {
+    // Same fixture as the 'double7 walker' entry/exit test below (entry at 118, exit at 119) --
+    // cross-checking against an already-verified walker outcome rather than a fresh scenario.
+    const closes = [100, 105, 110, 115, 120, 119, 118, 119, 121];
+    const lookback = 3;
+    // computeDouble7ExitWatchPrice is evaluated as of the entry bar (close=118, index 6) --
+    // predicting what the FOLLOWING bar needs to close at to exit, exactly like the live
+    // evaluator does off the current reference bar (see meanReversionRun.ts).
+    const watchPrice = computeDouble7ExitWatchPrice(closes.slice(0, 7), lookback);
+    const { trades } = runMeanReversionBacktest(
+      series(closes),
+      double7Params({ lookbackExitHigh: lookback }),
+    );
+
+    expect(watchPrice).toBe(trades[0]!.exitPrice);
   });
 });
 

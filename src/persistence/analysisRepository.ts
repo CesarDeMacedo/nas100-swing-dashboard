@@ -88,6 +88,10 @@ export type MeanReversionEvaluationInput = {
   referenceClose: number;
   signal: MeanReversionSignal;
   stopPrice: number | null;
+  /** 'double7' only, while a position is tracked: the closing price the NEXT bar would need to
+   * reach or exceed to trigger the strategy's signal exit. null for 'rsi2' and whenever there's
+   * no open position — see meanReversionRun.ts. */
+  exitWatchPrice: number | null;
   atr: number | null;
   smaFilterValue: number | null;
   aboveSmaFilter: boolean | null;
@@ -111,6 +115,7 @@ type MeanReversionEvaluationRow = {
   reference_close: number;
   signal: MeanReversionSignal;
   stop_price: number | null;
+  exit_watch_price: number | null;
   atr: number | null;
   sma_filter_value: number | null;
   above_sma_filter: number | null;
@@ -218,6 +223,7 @@ const createSchema = (database: DatabaseSync) => {
       reference_close REAL NOT NULL,
       signal TEXT NOT NULL CHECK (signal IN ('ENTER', 'HOLD', 'EXIT', 'FLAT')),
       stop_price REAL,
+      exit_watch_price REAL,
       atr REAL,
       sma_filter_value REAL,
       above_sma_filter INTEGER CHECK (above_sma_filter IN (0, 1) OR above_sma_filter IS NULL),
@@ -234,6 +240,13 @@ const createSchema = (database: DatabaseSync) => {
     INSERT OR IGNORE INTO schema_migrations (version, applied_at)
       VALUES (${PERSISTENCE_SCHEMA_VERSION}, '${new Date().toISOString()}');
   `);
+
+  const mrColumns = database.prepare('PRAGMA table_info(mr_evaluations)').all() as Array<{
+    name: string;
+  }>;
+  if (!mrColumns.some((column) => column.name === 'exit_watch_price')) {
+    database.exec(`ALTER TABLE mr_evaluations ADD COLUMN exit_watch_price REAL;`);
+  }
 };
 
 const toStoredRun = (row: RunRow): StoredAnalysisRun => ({
@@ -264,6 +277,7 @@ const toStoredMeanReversionEvaluation = (
   referenceClose: row.reference_close,
   signal: row.signal,
   stopPrice: row.stop_price,
+  exitWatchPrice: row.exit_watch_price,
   atr: row.atr,
   smaFilterValue: row.sma_filter_value,
   aboveSmaFilter: row.above_sma_filter === null ? null : Boolean(row.above_sma_filter),
@@ -556,10 +570,10 @@ export class AnalysisRepository {
       .prepare(
         `INSERT INTO mr_evaluations (
           id, strategy_config_id, strategy_id, version, instrument, timeframe, evaluated_at,
-          reference_candle_time, reference_close, signal, stop_price, atr, sma_filter_value,
-          above_sma_filter, risk_per_trade_pct, account_size, suggested_risk_amount,
-          suggested_position_size_units, persisted_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          reference_candle_time, reference_close, signal, stop_price, exit_watch_price, atr,
+          sma_filter_value, above_sma_filter, risk_per_trade_pct, account_size,
+          suggested_risk_amount, suggested_position_size_units, persisted_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         input.id,
@@ -573,6 +587,7 @@ export class AnalysisRepository {
         input.referenceClose,
         input.signal,
         input.stopPrice,
+        input.exitWatchPrice,
         input.atr,
         input.smaFilterValue,
         input.aboveSmaFilter === null ? null : Number(input.aboveSmaFilter),

@@ -159,6 +159,22 @@ export function wilderAtr(
   return result;
 }
 
+/** For 'double7': the closing price the NEXT bar would need to reach or exceed to trigger the
+ * strategy's signal exit (an N-bar closing high) — the same window `isHighestClose` would
+ * compare a new bar at `closes.length` against. Purely advisory/display: this family has no
+ * fixed target price (exit is a condition re-evaluated on every completed bar, not a level),
+ * so this is the closest thing to "where do I watch for the exit" that can be shown ahead of
+ * time. Returns null when there isn't enough closed history for the window yet, or when
+ * lookbackExitHigh <= 1 (a 1-bar lookback's "window" would be empty by construction). */
+export function computeDouble7ExitWatchPrice(
+  closes: readonly number[],
+  lookbackExitHigh: number,
+): number | null {
+  if (lookbackExitHigh <= 1 || closes.length < lookbackExitHigh - 1) return null;
+  const window = closes.slice(closes.length - (lookbackExitHigh - 1));
+  return Math.max(...window);
+}
+
 const isLowestClose = (closes: readonly number[], index: number, lookback: number) => {
   if (index < lookback - 1) return false;
   const current = closes[index]!;

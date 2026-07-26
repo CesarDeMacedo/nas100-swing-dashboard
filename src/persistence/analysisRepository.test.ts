@@ -309,6 +309,7 @@ const mrEvaluationInput = (
   referenceClose: 100,
   signal: 'FLAT' as const,
   stopPrice: null,
+  exitWatchPrice: null,
   atr: null,
   smaFilterValue: null,
   aboveSmaFilter: null,
@@ -327,11 +328,17 @@ describe('AnalysisRepository mean-reversion evaluations', () => {
       parameters: strategyParameters({ strategyKind: 'double7' }),
     });
     const stored = repository.saveMeanReversionEvaluation(
-      mrEvaluationInput(strategy.id, { signal: 'ENTER', stopPrice: 95, atr: 2.5 }),
+      mrEvaluationInput(strategy.id, {
+        signal: 'ENTER',
+        stopPrice: 95,
+        exitWatchPrice: 108.5,
+        atr: 2.5,
+      }),
     );
 
     expect(stored.signal).toBe('ENTER');
     expect(stored.stopPrice).toBe(95);
+    expect(stored.exitWatchPrice).toBe(108.5);
     expect(repository.listMeanReversionEvaluations(strategy.id)).toEqual([stored]);
     repository.close();
   });

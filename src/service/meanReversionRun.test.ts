@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { wilderAtr, type MeanReversionCandle, type MeanReversionParameters } from '../domain/meanReversionStrategy';
+import {
+  computeDouble7ExitWatchPrice,
+  runMeanReversionBacktest,
+  wilderAtr,
+  type MeanReversionCandle,
+  type MeanReversionParameters,
+} from '../domain/meanReversionStrategy';
 import type { StrategyConfig } from '../schemas/strategyConfig';
 import {
   DEFAULT_MR_RISK_PER_TRADE_PCT,
@@ -9,7 +15,11 @@ import {
   resolveMrAccountSize,
 } from './meanReversionRun';
 
-const bar = (index: number, close: number, overrides: Partial<MeanReversionCandle> = {}): MeanReversionCandle => ({
+const bar = (
+  index: number,
+  close: number,
+  overrides: Partial<MeanReversionCandle> = {},
+): MeanReversionCandle => ({
   time: new Date(Date.UTC(2026, 0, 1 + index)).toISOString(),
   open: close,
   high: close + 1,
@@ -29,7 +39,9 @@ const UPTREND_THEN_EXIT = [...UPTREND_THEN_DIP, 119];
 const UPTREND_THEN_HOLD = [...UPTREND_THEN_DIP, 115];
 const UPTREND_THEN_FLAT_AGAIN = [...UPTREND_THEN_EXIT, 121];
 
-const double7Params = (overrides: Partial<MeanReversionParameters> = {}): MeanReversionParameters => ({
+const double7Params = (
+  overrides: Partial<MeanReversionParameters> = {},
+): MeanReversionParameters => ({
   kind: 'double7',
   timeframe: 'D',
   smaFilterPeriod: 5,
@@ -55,7 +67,11 @@ const context = (overrides: Partial<Parameters<typeof evaluateMeanReversionSigna
 
 describe('evaluateMeanReversionSignal', () => {
   it('reports FLAT before any entry condition has fired', () => {
-    const evaluation = evaluateMeanReversionSignal(series(UPTREND_THEN_DIP.slice(0, 6)), double7Params(), context());
+    const evaluation = evaluateMeanReversionSignal(
+      series(UPTREND_THEN_DIP.slice(0, 6)),
+      double7Params(),
+      context(),
+    );
     expect(evaluation.signal).toBe('FLAT');
     expect(evaluation.stopPrice).toBeNull();
   });
@@ -97,7 +113,74 @@ describe('evaluateMeanReversionSignal', () => {
       const candles = series(UPTREND_THEN_DIP);
       const evaluation = evaluateMeanReversionSignal(candles, double7Params(), context());
       expect(evaluation.smaFilterValue).not.toBeNull();
-      expect(evaluation.aboveSmaFilter).toBe(evaluation.referenceClose > evaluation.smaFilterValue!);
+      expect(evaluation.aboveSmaFilter).toBe(
+        evaluation.referenceClose > evaluation.smaFilterValue!,
+      );
+    });
+  });
+
+  describe('exitWatchPrice', () => {
+    it('matches computeDouble7ExitWatchPrice on the reference bar while ENTER', () => {
+      const candles = series(UPTREND_THEN_DIP);
+      const evaluation = evaluateMeanReversionSignal(candles, double7Params(), context());
+      const expected = computeDouble7ExitWatchPrice(
+        candles.map((c) => c.close),
+        3,
+      );
+
+      expect(evaluation.signal).toBe('ENTER');
+      expect(evaluation.exitWatchPrice).toBe(expected);
+      expect(evaluation.exitWatchPrice).not.toBeNull();
+    });
+
+    it('is recomputed off the current reference bar while HOLD (not frozen at entry)', () => {
+      const candles = series(UPTREND_THEN_HOLD);
+      const evaluation = evaluateMeanReversionSignal(candles, double7Params(), context());
+      const expected = computeDouble7ExitWatchPrice(
+        candles.map((c) => c.close),
+        3,
+      );
+
+      expect(evaluation.signal).toBe('HOLD');
+      expect(evaluation.exitWatchPrice).toBe(expected);
+    });
+
+    it('is null on FLAT (before entry) and on EXIT — there is no position to watch an exit for', () => {
+      const beforeEntry = evaluateMeanReversionSignal(
+        series(UPTREND_THEN_DIP.slice(0, 6)),
+        double7Params(),
+        context(),
+      );
+      const onExit = evaluateMeanReversionSignal(
+        series(UPTREND_THEN_EXIT),
+        double7Params(),
+        context(),
+      );
+
+      expect(beforeEntry.signal).toBe('FLAT');
+      expect(beforeEntry.exitWatchPrice).toBeNull();
+      expect(onExit.signal).toBe('EXIT');
+      expect(onExit.exitWatchPrice).toBeNull();
+    });
+
+    it('is null for rsi2, even in an open position, since its exit is not a single solvable price level', () => {
+      const rsi2Closes = [...Array.from({ length: 30 }, () => 100), 130, 132, 118, 106, 131, 140];
+      const rsi2Params: MeanReversionParameters = {
+        ...double7Params(),
+        kind: 'rsi2',
+        smaFilterPeriod: 20,
+        rsiEntryThreshold: 20,
+        rsiExitThreshold: 80,
+        atrPeriod: 2,
+      };
+      const { trades } = runMeanReversionBacktest(series(rsi2Closes), rsi2Params);
+      const entryTime = trades[0]!.entryTime;
+      const entryIndex = series(rsi2Closes).findIndex((c) => c.time === entryTime);
+      const candlesThroughEntry = series(rsi2Closes).slice(0, entryIndex + 1);
+
+      const evaluation = evaluateMeanReversionSignal(candlesThroughEntry, rsi2Params, context());
+      expect(evaluation.signal).toBe('ENTER');
+      expect(evaluation.exitWatchPrice).toBeNull();
     });
   });
 
@@ -113,11 +196,18 @@ describe('evaluateMeanReversionSignal', () => {
     });
 
     it('sizes the position from riskPerTradePct * accountSize / stop distance', () => {
-      const evaluation = evaluateMeanReversionSignal(candles, params, context({ riskPerTradePct: 0.73, accountSize: 10000 }));
+      const evaluation = evaluateMeanReversionSignal(
+        candles,
+        params,
+        context({ riskPerTradePct: 0.73, accountSize: 10000 }),
+      );
       const expectedRiskAmount = 10000 * 0.0073;
       const expectedStopDistance = 2 * expectedAtrAtEntry;
       expect(evaluation.suggestedRiskAmount).toBeCloseTo(expectedRiskAmount, 10);
-      expect(evaluation.suggestedPositionSizeUnits).toBeCloseTo(expectedRiskAmount / expectedStopDistance, 10);
+      expect(evaluation.suggestedPositionSizeUnits).toBeCloseTo(
+        expectedRiskAmount / expectedStopDistance,
+        10,
+      );
     });
 
     it('defaults riskPerTradePct to 0.73 (the prop-desk decision) when unset', () => {
@@ -126,7 +216,11 @@ describe('evaluateMeanReversionSignal', () => {
     });
 
     it('omits position sizing when account size is unknown', () => {
-      const evaluation = evaluateMeanReversionSignal(candles, params, context({ accountSize: null }));
+      const evaluation = evaluateMeanReversionSignal(
+        candles,
+        params,
+        context({ accountSize: null }),
+      );
       expect(evaluation.accountSize).toBeNull();
       expect(evaluation.suggestedRiskAmount).toBeNull();
       expect(evaluation.suggestedPositionSizeUnits).toBeNull();
@@ -134,13 +228,21 @@ describe('evaluateMeanReversionSignal', () => {
     });
 
     it('never sizes a position when no protective stop is configured, even with a known account size', () => {
-      const evaluation = evaluateMeanReversionSignal(candles, double7Params(), context({ accountSize: 10000 }));
+      const evaluation = evaluateMeanReversionSignal(
+        candles,
+        double7Params(),
+        context({ accountSize: 10000 }),
+      );
       expect(evaluation.stopPrice).toBeNull();
       expect(evaluation.suggestedPositionSizeUnits).toBeNull();
     });
 
     it('never sizes a position on FLAT/EXIT, even with a stop-configured strategy and known account size', () => {
-      const evaluation = evaluateMeanReversionSignal(series(UPTREND_THEN_EXIT), params, context({ accountSize: 10000 }));
+      const evaluation = evaluateMeanReversionSignal(
+        series(UPTREND_THEN_EXIT),
+        params,
+        context({ accountSize: 10000 }),
+      );
       expect(evaluation.signal).toBe('EXIT');
       expect(evaluation.stopPrice).toBeNull();
       expect(evaluation.suggestedPositionSizeUnits).toBeNull();
@@ -179,7 +281,16 @@ describe('evaluateStrategyConfigLive', () => {
         atrPeriod: 2,
         maxBarsHeld: null,
       },
-      setupScoreWeights: { trend: 20, structure: 20, momentum: 15, location: 15, crossMarket: 10, eventRisk: 5, rewardRisk: 10, patienceReadiness: 5 },
+      setupScoreWeights: {
+        trend: 20,
+        structure: 20,
+        momentum: 15,
+        location: 15,
+        crossMarket: 10,
+        eventRisk: 5,
+        rewardRisk: 10,
+        patienceReadiness: 5,
+      },
       eventRisk: { blockingWindowMinutes: 60, minImpact: 'High' },
     },
   });
@@ -199,18 +310,27 @@ describe('evaluateStrategyConfigLive', () => {
     }));
 
   it('returns null for pipeline-kind strategies (nothing to evaluate)', () => {
-    const evaluation = evaluateStrategyConfigLive(baseStrategy('pipeline'), 'NAS100_USD', { D: oandaCandles(UPTREND_THEN_DIP) });
+    const evaluation = evaluateStrategyConfigLive(baseStrategy('pipeline'), 'NAS100_USD', {
+      D: oandaCandles(UPTREND_THEN_DIP),
+    });
     expect(evaluation).toBeNull();
   });
 
   it('returns null when the strategy configured timeframe has no candles', () => {
-    const evaluation = evaluateStrategyConfigLive(baseStrategy('double7'), 'NAS100_USD', { H4: oandaCandles(UPTREND_THEN_DIP) });
+    const evaluation = evaluateStrategyConfigLive(baseStrategy('double7'), 'NAS100_USD', {
+      H4: oandaCandles(UPTREND_THEN_DIP),
+    });
     expect(evaluation).toBeNull();
   });
 
   it('filters open candles and evaluates only completed bars', () => {
-    const candles = [...oandaCandles(UPTREND_THEN_DIP), { ...oandaCandles([200])[0]!, isClosed: false }];
-    const evaluation = evaluateStrategyConfigLive(baseStrategy('double7'), 'NAS100_USD', { D: candles });
+    const candles = [
+      ...oandaCandles(UPTREND_THEN_DIP),
+      { ...oandaCandles([200])[0]!, isClosed: false },
+    ];
+    const evaluation = evaluateStrategyConfigLive(baseStrategy('double7'), 'NAS100_USD', {
+      D: candles,
+    });
     expect(evaluation).not.toBeNull();
     expect(evaluation!.signal).toBe('ENTER');
     expect(evaluation!.referenceClose).toBe(118);

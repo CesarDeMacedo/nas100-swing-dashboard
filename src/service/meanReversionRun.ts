@@ -6,6 +6,7 @@
  */
 
 import {
+  computeDouble7ExitWatchPrice,
   runMeanReversionBacktest,
   simpleMovingAverage,
   wilderAtr,
@@ -36,6 +37,14 @@ export type MeanReversionEvaluation = {
   /** entryPrice - protectiveStopAtrMultiple * atrAtEntry, only while a position is tracked
    * (ENTER/HOLD) and the strategy is configured with a protective stop. */
   stopPrice: number | null;
+  /** 'double7' only, and only while a position is tracked (ENTER/HOLD): the closing price the
+   * NEXT completed bar would need to reach or exceed to trigger the strategy's signal exit
+   * (an N-bar closing high). This family has no fixed target — the exit is a condition
+   * re-evaluated each bar, not a price level — so this is advisory ("watch for a close at or
+   * above this to expect an EXIT"), not a level that guarantees an exit if merely touched
+   * intrabar. null for 'rsi2' (RSI's exit threshold isn't a single solvable price level) and
+   * whenever there's no open position or not enough history for the window yet. */
+  exitWatchPrice: number | null;
   /** ATR(atrPeriod) as of the reference (most recent completed) bar. */
   atr: number | null;
   /** SMA(smaFilterPeriod) as of the reference bar. */
@@ -87,6 +96,7 @@ export function evaluateMeanReversionSignal(
   let signal: MeanReversionSignal;
   let stopPrice: number | null = null;
   let stopDistance: number | null = null;
+  let exitWatchPrice: number | null = null;
 
   if (isOpen) {
     signal = lastTrade!.entryTime === lastCandle.time ? 'ENTER' : 'HOLD';
@@ -97,6 +107,9 @@ export function evaluateMeanReversionSignal(
     ) {
       stopDistance = params.protectiveStopAtrMultiple * lastTrade!.atrAtEntry;
       stopPrice = lastTrade!.entryPrice - stopDistance;
+    }
+    if (params.kind === 'double7') {
+      exitWatchPrice = computeDouble7ExitWatchPrice(closes, params.lookbackExitHigh);
     }
   } else {
     signal = lastTrade !== null && lastTrade.exitTime === lastCandle.time ? 'EXIT' : 'FLAT';
@@ -121,6 +134,7 @@ export function evaluateMeanReversionSignal(
     referenceClose: lastCandle.close,
     signal,
     stopPrice,
+    exitWatchPrice,
     atr,
     smaFilterValue,
     aboveSmaFilter: smaFilterValue === null ? null : lastCandle.close > smaFilterValue,

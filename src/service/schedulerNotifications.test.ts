@@ -10,7 +10,9 @@ import { notifyMeanReversionEvaluation, notifySchedulerOutcome } from './schedul
 
 afterEach(() => vi.mocked(notifier.notify).mockClear());
 
-const evaluation = (overrides: Partial<StoredMeanReversionEvaluation> = {}): StoredMeanReversionEvaluation => ({
+const evaluation = (
+  overrides: Partial<StoredMeanReversionEvaluation> = {},
+): StoredMeanReversionEvaluation => ({
   id: 'eval-1',
   strategyConfigId: 'strategy:1',
   strategyId: 'strategy',
@@ -22,6 +24,7 @@ const evaluation = (overrides: Partial<StoredMeanReversionEvaluation> = {}): Sto
   referenceClose: 100,
   signal: 'FLAT',
   stopPrice: null,
+  exitWatchPrice: null,
   atr: null,
   smaFilterValue: null,
   aboveSmaFilter: null,
@@ -40,7 +43,9 @@ describe('notifySchedulerOutcome', () => {
     notifySchedulerOutcome({ outcome: 'failed', runKey: 'k' });
 
     expect(notifier.notify).toHaveBeenCalledTimes(3);
-    const messages = vi.mocked(notifier.notify).mock.calls.map(([payload]) => String((payload as { message: string }).message));
+    const messages = vi
+      .mocked(notifier.notify)
+      .mock.calls.map(([payload]) => String((payload as { message: string }).message));
     for (const message of messages) {
       expect(message).not.toMatch(/\benter\b|\bbuy\b|\bsell\b|act now/i);
     }
@@ -59,7 +64,9 @@ describe('notifyMeanReversionEvaluation', () => {
     notifyMeanReversionEvaluation(evaluation({ signal: 'EXIT', stopPrice: null }));
 
     expect(notifier.notify).toHaveBeenCalledTimes(2);
-    const messages = vi.mocked(notifier.notify).mock.calls.map(([payload]) => String((payload as { message: string }).message));
+    const messages = vi
+      .mocked(notifier.notify)
+      .mock.calls.map(([payload]) => String((payload as { message: string }).message));
     expect(messages[0]).toMatch(/ENTER/);
     expect(messages[0]).toMatch(/95\.50/);
     expect(messages[1]).toMatch(/EXIT/);
