@@ -5,6 +5,12 @@ import { findConfirmedSwingPoints } from './h4Structure';
 
 export const MARKET_LEVEL_ZONE_ATR_BUFFER = 0.2;
 export const MARKET_LEVEL_INVALIDATION_ATR_BUFFER = 0.1;
+/** Confirmed swings are filtered by price only (not recency), so a long enough candle history
+ * (e.g. years of backtest data) can surface a swing from long ago as a "support"/"resistance"
+ * candidate. Capping to the N nearest-to-price zones — after the existing proximity sort —
+ * keeps `invalidationBase` in tradePlan.ts anchored to structurally relevant, nearby levels
+ * regardless of how much history the caller passes in. */
+export const MARKET_LEVEL_MAX_ZONES = 5;
 
 export type MarketLevelDirection = 'long' | 'short' | 'none';
 
@@ -61,11 +67,11 @@ export function calculateMarketLevels(candles: readonly Candle[], direction: Mar
   const supports = deduplicate(
     swings.lows.filter((swing) => swing.price <= latest.close + atr * MARKET_LEVEL_ZONE_ATR_BUFFER).map((swing) => zone('SUPPORT', swing.price, swing.time, atr)).sort((left, right) => latest.close - ((left.low + left.high) / 2) - (latest.close - ((right.low + right.high) / 2))),
     atr,
-  );
+  ).slice(0, MARKET_LEVEL_MAX_ZONES);
   const resistances = deduplicate(
     swings.highs.filter((swing) => swing.price >= latest.close - atr * MARKET_LEVEL_ZONE_ATR_BUFFER).map((swing) => zone('RESISTANCE', swing.price, swing.time, atr)).sort((left, right) => ((left.low + left.high) / 2) - latest.close - (((right.low + right.high) / 2) - latest.close)),
     atr,
-  );
+  ).slice(0, MARKET_LEVEL_MAX_ZONES);
   const selected = preferred(direction === 'long' ? supports : direction === 'short' ? resistances : [], direction, snapshot.ema20.value, snapshot.ema21.value, atr);
   const invalidationCandidate = selected === null ? null : direction === 'long' ? selected.low - atr * MARKET_LEVEL_INVALIDATION_ATR_BUFFER : selected.high + atr * MARKET_LEVEL_INVALIDATION_ATR_BUFFER;
   const warnings = [
