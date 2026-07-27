@@ -1,5 +1,18 @@
 # Changelog
 
+## Confirmed H4 Gets the Same Chart Treatment as D1 (Test Coverage Gap Closed)
+
+- User asked to verify the entry/stop/exit-watch chart overlay (`mapMeanReversionPriceLines`)
+  applies to the H4 strategy the same way it does to D1. Reading the code confirmed it already
+  does — the function loops over every active evaluation and keys color/labeling off
+  `evaluation.timeframe`, nothing D1-specific — but there was no dedicated unit test proving
+  it, only an implicit read of the source. Added explicit coverage in `chartAdapter.test.ts`:
+  D1 and H4 each produce correct entry/stop/exit-watch lines, get 6 distinct non-overlapping
+  colors between them, never collide on id when both render together, draw nothing on
+  FLAT/EXIT, and correctly omit stop/exit-watch individually when null. H4's lines aren't
+  currently visible on the live chart only because its real signal is FLAT (no open position)
+  — no code change was needed, this closed a test-coverage gap the question surfaced.
+
 ## Exit-Watch Price for Double Seven (Answers "How Do I Know When to Exit?")
 
 - Condition-exit strategies (Double Seven) have no fixed target price — the exit is "today's

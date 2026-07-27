@@ -123,3 +123,36 @@ of 2026-07-26); the implementing session should execute, not re-litigate them. C
    "did the right data reach the screen" were updated to check an equivalent surviving signal
    instead (or removed, where the safety property they protected is independently covered at
    the domain level, e.g. `buildDashboardState.test.ts`'s open-candle fixture case).
+
+## Follow-up work (2026-07-26, third round: exit-watch price)
+
+6. **User question "how do I know when to exit?" surfaced a real gap**: Double Seven has no
+   fixed target — the exit is a condition (today's close is a 7-day closing high) re-evaluated
+   every bar, not a level. `computeDouble7ExitWatchPrice` (`meanReversionStrategy.ts`) makes
+   this concrete: the max of the trailing (lookbackExitHigh-1) closes, i.e. what the NEXT bar
+   needs to reach or exceed — verified by cross-checking against the backtest walker's own
+   exit logic on a known fixture, not re-derived independently. `null` for `rsi2` (its exit
+   isn't a single solvable price). Threaded through the evaluator (`exitWatchPrice`), an
+   additive `exit_watch_price` column, the sidebar card, the chart (a third, dotted line per
+   strategy — dotted specifically to read as "watch level" not "order level"), and the history
+   panel. See `CHANGELOG.md` ("Exit-Watch Price for Double Seven") for the full list.
+7. **One-time production data note, not a code change**: after shipping the field, the
+   currently-persisted evaluation rows for both active strategies predated it and read back
+   `exitWatchPrice: null` — correct per the additive-column contract, but it meant the UI
+   would show "Not available" for up to ~24h until the next real daily close. Rather than wait,
+   a one-off script called the real `evaluateStrategyConfigLive` (same function the scheduler
+   uses) for each active strategy and persisted the result via `saveMeanReversionEvaluation`
+   with a fresh `evaluatedAt` — inserting a NEW row, never rewriting the old one, so
+   `mr_evaluations` stayed append-only. The computed values were the same the next scheduled
+   run would have produced for the same reference bar; this only skipped the wait. Future
+   sessions: this is why some `evaluated_at` timestamps in the table don't align with a real
+   Toronto scheduler slot — it's a legitimate one-time catch-up, not corrupted data, and should
+   stay a rare exception rather than a normal operating pattern (the append-only/immutable
+   contract is what makes the evaluation history trustworthy as an audit trail).
+8. **Test-coverage gap found and closed**: `mapMeanReversionPriceLines` (the chart overlay) had
+   no dedicated unit tests despite being read as "already generic across timeframes" from the
+   code alone — added explicit coverage in `chartAdapter.test.ts` proving D1 and H4 behave
+   identically (correct ids/titles/prices, 6 distinct non-overlapping colors, no id collisions
+   when both render together, no stale lines on FLAT/EXIT, correct per-field null omission).
+   Confirms H4 gets the exact same entry/stop/exit-watch chart treatment as D1 — it simply
+   isn't visible right now because H4's live signal is FLAT (no open position to draw).
