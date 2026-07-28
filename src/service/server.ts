@@ -183,9 +183,9 @@ const resolvePort = (value: string | undefined) => {
  * the same scheduler slots as the main pipeline (no new slots — see docs/MR_LIVE_INTEGRATION_PLAN.md).
  * Independent of the main pipeline run: fetches its own completed daily/H4 candles (cached per
  * timeframe so multiple MR strategies sharing a timeframe don't refetch), persists every
- * evaluation, and returns them for the caller to notify on. Never touches
- * safetyConstrainedState/the Patience Filter/minRewardRisk — this is a parallel, analysis-only
- * surface with no order placement.
+ * evaluation, and returns them for the caller to notify on. Never touches the pipeline's own
+ * Patience Filter/minRewardRisk gates — this is a parallel, analysis-only surface with no order
+ * placement.
  *
  * Deduplicated per completed bar: a daily reference bar stays the latest completed bar across
  * up to six consecutive scheduler slots, so without this check the same ENTER/EXIT would be

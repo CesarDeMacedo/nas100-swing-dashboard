@@ -61,8 +61,10 @@ of 2026-07-26); the implementing session should execute, not re-litigate them. C
 ## Hard constraints (safety — violating any of these is a failed implementation)
 
 - The app is analysis-only. No order placement, no broker integration, nothing that executes.
-- Do NOT touch `safetyConstrainedState` in `src/service/oandaRun.ts`, the Patience Filter, or
-  any pipeline entry-authorization logic. The MR path is parallel and additive.
+- Do NOT touch the pipeline's entry-authorization logic (`decideStrategy`/`strategyDecision.ts`,
+  the Patience Filter) from MR work. The MR path is parallel and additive. (Historical note: the
+  OANDA pipeline used to carry a separate `safetyConstrainedState` clamp in `src/service/oandaRun.ts`;
+  it was removed under ADR-018, `docs/DECISIONS.md`, unrelated to and independent of any MR work.)
 - The `minRewardRisk >= 2.0` floor stays enforced for `strategyKind: 'pipeline'`; MR kinds do
   not consult it (already implemented — do not "fix" this).
 - Completed candles only; never evaluate on an open bar.

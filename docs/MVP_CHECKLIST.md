@@ -12,8 +12,8 @@
 - [x] Scheduled OANDA runs retry with backoff on transient network errors or a stale/not-yet-available H4 candle, without ever accepting data from the wrong H4 window (C4, `src/service/scheduledOandaRun.test.ts`).
 - [x] Live cross-market H4 confirmation (US500, US30, Russell 2000) is fetched from the existing OANDA account and classified against NAS100's own H4 structure (A1, `src/service/oandaRun.test.ts`).
 - [x] Scheduler outcomes trigger a local, informational-only OS notification via `node-notifier`; the test suite never triggers a real notification (A5, `src/service/schedulerNotifications.test.ts`, `src/service/scheduler/fixtureScheduler.test.ts`).
-- [ ] An event-risk data source is wired, but only as a validation spike (unofficial Forex Factory feed, A2) — not a resolved production provider. Entry authorization remains hard-blocked regardless (see below).
-- [x] A dedicated regression test proves the OANDA pipeline's entry-authorization clamp actually holds back a real computed BUY, not just a hypothetical one — verified by temporarily bypassing the clamp and confirming the test fails (`src/service/oandaRun.test.ts`).
+- [ ] An event-risk data source is wired, but only as a validation spike (unofficial Forex Factory feed, A2) — not a resolved production provider. Entry authorization is no longer hard-blocked on it (ADR-018, explicit user decision) — the trader weighs it manually.
+- [x] A dedicated regression test proves the OANDA pipeline authorizes a live BUY end to end once a full realistic setup lines up, in place of the former test that proved the now-removed entry-authorization clamp held one back (`src/service/oandaRun.test.ts`, ADR-018).
 
 ## Configurable strategies and backtest harness (ADR-017)
 

@@ -233,16 +233,19 @@ describe('manual OANDA analysis run', () => {
     expect(analysis.crossMarket.us500).toMatchObject({ confirmation: 'UNAVAILABLE', dataFreshness: 'MISSING' });
   });
 
-  it('never authorizes BUY/SELL from cross-market confirmation alone, since event-risk remains unavailable', () => {
+  it('does not authorize BUY/SELL from cross-market confirmation alone without a real pullback/confirmation setup', () => {
     const store = repository();
     const nas100 = trendSource('NAS100_USD', 'up');
     const crossMarketH4: CrossMarketH4Results = { us500: trendSource('SPX500_USD', 'up'), us30: trendSource('US30_USD', 'up'), russell2000: trendSource('US2000_USD', 'up') };
 
     const result = runManualOandaAnalysis(store, nas100, dailySource(), 'user', crossMarketH4);
 
+    // trendSource's flat-bodied candles never satisfy calculateTradePlan's confirmation-candle
+    // check (see bullishPullbackConfirmedSource's derivation comment above), so this stays
+    // WAIT_FOR_PULLBACK on setup geometry alone — cross-market confirmation cannot substitute
+    // for a real entry location/confirmation candle.
     expect(['BUY', 'SELL']).not.toContain(result.report?.action);
     expect(result.report?.isActionable).toBe(false);
-    expect(result.report?.primaryReason).toContain('Entry authorization is disabled');
     store.close();
   });
 
@@ -286,7 +289,7 @@ describe('manual OANDA analysis run', () => {
     expect(result.us30).toBeUndefined();
   });
 
-  it('reflects real (non-placeholder) event-risk data in the analysis when it is supplied, but still never authorizes BUY/SELL', () => {
+  it('reflects real (non-placeholder) event-risk data in the analysis when it is supplied; event risk is advisory only and does not by itself authorize or block BUY/SELL', () => {
     const store = repository();
     const blockingEvent: EventRisk = { status: 'AVAILABLE', severity: 'BLOCKING', eventName: 'Non-Farm Payrolls', eventTime: '2026-01-02T00:20:00.000Z', source: 'forex-factory-spike', freshness: 'FRESH', blocksEntry: true, notes: ['test'] };
 
@@ -295,9 +298,11 @@ describe('manual OANDA analysis run', () => {
 
     expect(analysis.eventRisk).toEqual([blockingEvent]);
     expect(analysis.whyNoEntry).toEqual([]); // no longer the stale "unavailable" placeholder text
+    // trendSource's flat-bodied candles never satisfy the confirmation-candle check, so this
+    // stays WAIT_FOR_PULLBACK on setup geometry — same reason as the cross-market-alone case
+    // above, not because the (now-advisory) blocking event risk withheld it.
     expect(['BUY', 'SELL']).not.toContain(result.report?.action);
     expect(result.report?.isActionable).toBe(false);
-    expect(result.report?.primaryReason).toContain('Entry authorization is disabled');
     store.close();
   });
 
@@ -315,39 +320,37 @@ describe('manual OANDA analysis run', () => {
     expect(analysis.whyNoEntry).toEqual(['Event-risk data is unavailable.']);
   });
 
-  it('proves the safety clamp actually holds something back: the same realistic inputs that make the underlying pipeline compute a real BUY still come out as WAIT once runManualOandaAnalysis applies safetyConstrainedState', () => {
+  it('authorizes a live BUY once a full realistic setup lines up (the former event-risk safety clamp, ADR-016, was intentionally removed)', () => {
     // A fully "good" scenario by construction: confirmed bullish H4 structure with a real
     // pullback-then-confirmation candle (entry location acceptable, confirmation candle
     // confirmed, R:R >= 2.0 — see bullishPullbackConfirmedSource's derivation comment), a
     // 'ready' daily regime, cross-market CONFIRMING on all three instruments, and clean
-    // (non-blocking) event-risk. If the clamp were ever accidentally loosened or removed,
-    // this exact input would start returning BUY from runManualOandaAnalysis.
+    // (non-blocking) event-risk. Before ADR-016 was reversed, runManualOandaAnalysis forced
+    // this exact input back to WAIT via safetyConstrainedState; it no longer does.
     const nas100 = bullishPullbackConfirmedSource('NAS100_USD');
     const crossMarketH4: CrossMarketH4Results = { us500: trendSource('SPX500_USD', 'up'), us30: trendSource('US30_USD', 'up'), russell2000: trendSource('US2000_USD', 'up') };
     const cleanEventRisk: EventRisk[] = [];
 
     const { analysis, candles, technicalContext } = buildOandaMultiTimeframeInputs(nas100, richDailySource('NAS100_USD'), '2026-05-01T00:00:00.000Z', crossMarketH4, cleanEventRisk);
     const { preferredEntryZone: _p, invalidation: _i, ...analysisWithoutMarketLevels } = analysis;
-    // Mirrors exactly what runManualOandaAnalysis does internally before the clamp, so this
-    // pre-clamp state is provably the same one the real pipeline would have produced.
-    const preClampState = buildDashboardState({ ...analysisWithoutMarketLevels, supportZones: [], resistanceZones: [] }, candles, technicalContext);
+    // Mirrors exactly what runManualOandaAnalysis computes internally, so this is provably the
+    // same decision the real pipeline produces.
+    const dashboardState = buildDashboardState({ ...analysisWithoutMarketLevels, supportZones: [], resistanceZones: [] }, candles, technicalContext);
 
-    // Proof #1: without the clamp, this input really does produce a live BUY.
-    expect(preClampState.action).toBe('BUY');
-    expect(preClampState.isActionable).toBe(true);
-    expect(preClampState.entryPrice).not.toBeNull();
-    expect(preClampState.estimatedRewardRisk).not.toBeNull();
-    expect(preClampState.estimatedRewardRisk!).toBeGreaterThanOrEqual(2);
+    expect(dashboardState.action).toBe('BUY');
+    expect(dashboardState.isActionable).toBe(true);
+    expect(dashboardState.entryPrice).not.toBeNull();
+    expect(dashboardState.estimatedRewardRisk).not.toBeNull();
+    expect(dashboardState.estimatedRewardRisk!).toBeGreaterThanOrEqual(2);
 
-    // Proof #2: the real, unmodified pipeline on the exact same input still returns WAIT.
+    // The real, unmodified pipeline on the exact same input now returns that same live BUY.
     const store = repository();
     const result = runManualOandaAnalysis(store, nas100, richDailySource('NAS100_USD'), 'user', crossMarketH4, cleanEventRisk);
 
-    expect(['BUY', 'SELL']).not.toContain(result.report?.action);
-    expect(result.report?.isActionable).toBe(false);
-    expect(result.report?.entryPrice).toBeNull();
-    expect(result.report?.targets).toEqual([]);
-    expect(result.report?.primaryReason).toContain('Entry authorization is disabled');
+    expect(result.report?.action).toBe('BUY');
+    expect(result.report?.isActionable).toBe(true);
+    expect(result.report?.entryPrice).not.toBeNull();
+    expect(result.report?.targets.length).toBeGreaterThan(0);
     store.close();
   });
 });

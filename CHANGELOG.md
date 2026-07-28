@@ -1,5 +1,35 @@
 # Changelog
 
+## Pipeline Strategy Made Visible Again, and Its Two Remaining Blockers Loosened
+
+- User asked to strip the Patience Filter's "extra" safety gates so the pipeline (daily-trend
+  bias + H4 pullback entry, `decideStrategy`/`strategyDecision.ts`) surfaces more signals for
+  manual review instead of staying silent. `evaluatePatienceFilter` (`patienceFilter.ts`) now
+  treats event risk and primary cross-market confirmation as advisory-only — they're still
+  computed and shown, but no longer contribute to `blocked`/`waiting` status. Data-integrity
+  gates (stale data, unavailable provider, open candle, structural invalidation, R:R floor,
+  entry location, confirmation candle, stop/target validity) are unchanged.
+- Investigating "how do I see this live" surfaced that the pipeline's decision had no live UI
+  anywhere (removed from the sidebar when the pipeline was dormant) and that the OANDA server
+  pipeline (`src/service/oandaRun.ts`) carried a second, separate gate: `safetyConstrainedState`
+  unconditionally clamped `action` to `WAIT` and cleared entry/stop/targets, regardless of what
+  the pipeline computed (ADR-016, `docs/DECISIONS.md`) — a deliberate, documented decision
+  pending event-risk provider validation, protected by its own regression test.
+- User explicitly chose to remove that clamp too (ADR-018, superseding ADR-016): both manual
+  and scheduled OANDA runs (they share `runManualOandaAnalysis`) now persist and display the
+  real computed decision, including live BUY/SELL with real entry/stop/target prices. The
+  protective test was rewritten to assert the opposite — that a realistic full setup now
+  authorizes BUY end to end — instead of deleted, so regression coverage on this path is not
+  lost.
+- Added `PipelineStrategyCard` (`src/components/sidebar/PipelineStrategyCard.tsx`), a live
+  status card mirroring `MeanReversionStrategyCard`'s layout: action, direction, entry, stop,
+  invalidation, targets, estimated R:R, and the decision's reason text. It reads from
+  `DashboardState` on the live/mock view and falls back to the persisted `SafeAnalysis` fields
+  on a saved OANDA snapshot (the default view on app open), so both paths show the same
+  decision instead of one silently going blank. Existing saved OANDA reports remain immutable
+  by design and will keep showing their old (pre-fix) values until the next H4 close produces a
+  fresh report.
+
 ## Confirmed H4 Gets the Same Chart Treatment as D1 (Test Coverage Gap Closed)
 
 - User asked to verify the entry/stop/exit-watch chart overlay (`mapMeanReversionPriceLines`)

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import { buildDashboardState, type DashboardState } from '../application/buildDashboardState';
+import { buildDashboardState } from '../application/buildDashboardState';
 import { buildSwingReport, SWING_REPORT_VERSION, type SwingReport } from '../application/buildSwingReport';
 import { classifyDailyRegime } from '../domain/dailyRegime';
 import { calculateMarketLevels, type MarketLevelDirection, type MarketLevels } from '../domain/marketLevels';
@@ -223,8 +223,8 @@ export const buildOandaMultiTimeframeInputs = (h4Source: OandaH4CandleResult, da
     whyNoEntry: eventRiskUnavailable ? ['Event-risk data is unavailable.'] : [],
     whatToDoNext: eventRiskUnavailable
       ? ['Wait for integrated event-risk data before considering an entry.']
-      : ['Review the computed decision below; entry authorization for this pipeline remains disabled pending full event-risk provider validation (A2 spike, see docs/DECISIONS.md).'],
-    marketContext: ['OANDA midpoint H4 data is available for manual read-only analysis.', eventRiskUnavailable ? 'Event-risk context is unavailable.' : 'Event-risk context reflects a spike-quality feed (Forex Factory) pending full provider validation.'],
+      : ['Review the computed decision below.'],
+    marketContext: ['OANDA midpoint H4 data is available for manual read-only analysis.', eventRiskUnavailable ? 'Event-risk context is unavailable.' : 'Event-risk context reflects a spike-quality feed (Forex Factory) that has not been validated as a stable production source.'],
     indicators: {},
     crossMarket,
     eventRisk: eventRiskEntries,
@@ -264,27 +264,6 @@ export const buildOandaMultiTimeframeInputs = (h4Source: OandaH4CandleResult, da
 
 export const buildOandaReportInputs = (source: OandaH4CandleResult, generatedAt = new Date().toISOString(), crossMarketH4: CrossMarketH4Results = {}, eventRisk?: EventRisk[]) =>
   buildOandaMultiTimeframeInputs(source, emptyDailyResult(source), generatedAt, crossMarketH4, eventRisk);
-
-const safetyConstrainedState = (state: DashboardState): DashboardState => ({
-  ...state,
-  action: state.action === 'BUY' || state.action === 'SELL' ? 'WAIT' : state.action,
-  direction: state.action === 'BUY' || state.action === 'SELL' ? 'none' : state.direction,
-  isActionable: false,
-  entryTrigger: null,
-  entryPrice: null,
-  invalidationPrice: null,
-  stopPrice: null,
-  targets: [],
-  estimatedRewardRisk: null,
-  // A2's event-risk feed (Forex Factory) is a validation spike, not a production commitment
-  // (see docs/DECISIONS.md) — entry stays disabled by explicit product decision, independent
-  // of whatever the computed decision above found, until that spike is resolved one way or
-  // the other. This text is deliberately generic rather than claiming a specific input is
-  // unavailable, since that claim would often now be false.
-  primaryReason: 'Entry authorization is disabled pending event-risk provider validation.',
-  reasons: ['OANDA H4 candles are completed.', 'Entry authorization is disabled pending event-risk provider validation.'],
-  warnings: [...state.warnings, 'This manual OANDA run cannot authorize an entry while event-risk provider validation (A2 spike) is still pending.'],
-});
 
 /** The trailing `strategyConfigId ?? 'default'` segment was added when strategy configs were
  * introduced, so two different strategies analyzing the same H4 close produce distinct run
@@ -333,15 +312,9 @@ export const runManualOandaAnalysis = (repository: AnalysisRepository, source: O
   try {
     const { analysis, candles, multiTimeframe, technicalContext, marketLevels } = buildOandaMultiTimeframeInputs(source, dailySource, startedAt, crossMarketH4, eventRisk);
     const { preferredEntryZone: _preferredEntryZone, invalidation: _invalidation, ...analysisWithoutMarketLevels } = analysis;
-    const preClampState = buildDashboardState({ ...analysisWithoutMarketLevels, supportZones: [], resistanceZones: [] }, candles, technicalContext);
-    // A2 spike observability only: entry is always forced back to WAIT below regardless of
-    // what this computed (see safetyConstrainedState) — logged so real event-risk data can be
-    // observed changing the underlying decision without touching the safety clamp itself.
-    if (eventRisk !== undefined) {
-      console.log(`[A2 spike] pre-safety-clamp decision: action=${preClampState.action} direction=${preClampState.direction} primaryReason=${JSON.stringify(preClampState.primaryReason)}`);
-    }
+    const dashboardState = buildDashboardState({ ...analysisWithoutMarketLevels, supportZones: [], resistanceZones: [] }, candles, technicalContext);
     const baseReport = {
-      ...buildSwingReport(safetyConstrainedState(preClampState)),
+      ...buildSwingReport(dashboardState),
       dailySourceCandleTime: multiTimeframe.dailySourceCandleTime,
       supportZones: analysis.supportZones,
       resistanceZones: analysis.resistanceZones,

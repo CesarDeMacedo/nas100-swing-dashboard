@@ -207,6 +207,9 @@ export function Dashboard({
           />
         </Suspense>
         <AnalysisSidebar
+          dashboardState={state}
+          analysis={analysis}
+          onOpenHistory={onOpenHistory}
           mrEvaluationsList={mrEvaluationsList}
           onOpenMrEvaluations={onOpenMrEvaluations}
         />

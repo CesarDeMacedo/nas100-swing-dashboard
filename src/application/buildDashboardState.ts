@@ -11,7 +11,7 @@ import { DEFAULT_STRATEGY_PARAMETERS, type ResolvedStrategyParameters } from '..
 export type DashboardState = { instrument: string; displayName: string; timeframe: string; generatedAt: string; sourceCandleTime: string | null; dataFreshness: AnalysisReport['dataFreshness']; action: AnalysisReport['action']; actionLabel: string; direction: 'long' | 'short' | 'none'; bias: string; setupStatus: string; marketRegime: string; h4Structure: string; score: number | null; grade: string | null; premiumSetupState: string; isActionable: boolean; currentPrice: number; changePercent: number; entryTrigger: string | null; entryPrice: number | null; invalidationPrice: number | null; stopPrice: number | null; targets: number[]; estimatedRewardRisk: number | null; primaryReason: string; reasons: string[]; warnings: string[]; whyNoEntry: string[]; whatToDoNext: string[]; marketContext: string[]; supportZones: AnalysisReport['supportZones']; resistanceZones: AnalysisReport['resistanceZones']; preferredEntryZone: AnalysisReport['preferredEntryZone']; candles: CandleDataset['candles']; dataHealth: AnalysisReport['dataHealth']; };
 
 const confirmation = (value: string) => value === 'CONFIRMING' ? 'confirming' : value === 'CONTRADICTING' ? 'contradicting' : value === 'UNAVAILABLE' ? 'unknown' : 'neutral';
-const actionLabel = (action: AnalysisReport['action']) => {
+export const actionLabel = (action: AnalysisReport['action']) => {
   const labels: Record<AnalysisReport['action'], string> = {
     BUY: 'BUY SETUP CONFIRMED',
     SELL: 'SELL SETUP CONFIRMED',
