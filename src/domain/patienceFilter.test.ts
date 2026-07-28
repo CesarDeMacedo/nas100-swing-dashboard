@@ -47,12 +47,11 @@ describe('Patience Filter', () => {
     expect(result.passedChecks).toContain('minimum_reward_to_risk');
   });
 
-  it('blocks open candles, stale data, unavailable providers, event risk, and structural invalidation', () => {
+  it('blocks open candles, stale data, unavailable providers, and structural invalidation', () => {
     const cases: Array<[string, (value: PatienceFilterInput) => void]> = [
       ['open candle', (value) => { value.technicalContext = { ...value.technicalContext!, latestCandleStatus: 'OPEN' }; }],
       ['stale data', (value) => { value.dataFreshness = 'STALE'; }],
       ['provider unavailable', (value) => { value.providerStatus = 'UNAVAILABLE'; }],
-      ['event risk', (value) => { value.eventRisk = 'blocking'; }],
       ['structural invalidation', (value) => { value.structurallyInvalidated = true; }],
     ];
 
@@ -63,15 +62,25 @@ describe('Patience Filter', () => {
     });
   });
 
-  it('waits for unknown event risk, missing confirmation, and an unreached entry location', () => {
-    const eventRisk = input();
-    eventRisk.eventRisk = 'unknown';
+  it('no longer blocks or delays entry on event risk (advisory only)', () => {
+    const blocking = input();
+    blocking.eventRisk = 'blocking';
+    const unknown = input();
+    unknown.eventRisk = 'unknown';
+    const invalid = input();
+    invalid.eventRisk = 'invalid';
+
+    expect(evaluatePatienceFilter('long', blocking)).toMatchObject({ status: 'allowed', canEnter: true });
+    expect(evaluatePatienceFilter('long', unknown)).toMatchObject({ status: 'allowed', canEnter: true });
+    expect(evaluatePatienceFilter('long', invalid)).toMatchObject({ status: 'allowed', canEnter: true });
+  });
+
+  it('waits for missing confirmation and an unreached entry location', () => {
     const confirmation = input();
     confirmation.confirmationCandle = 'missing';
     const location = input();
     location.entryLocation = 'not_reached';
 
-    expect(evaluatePatienceFilter('long', eventRisk).status).toBe('waiting');
     expect(evaluatePatienceFilter('long', confirmation).status).toBe('waiting');
     expect(evaluatePatienceFilter('long', location).status).toBe('waiting');
   });
@@ -92,21 +101,17 @@ describe('Patience Filter', () => {
     });
   });
 
-  it('waits for incomplete primary cross-market confirmation and blocks contradiction', () => {
+  it('no longer waits or blocks on incomplete or contradicting primary cross-market confirmation (advisory only)', () => {
     const incomplete = input();
     incomplete.crossMarket.us500.long = 'neutral';
     const contradictory = input();
     contradictory.crossMarket.us30.long = 'contradicting';
 
-    expect(evaluatePatienceFilter('long', incomplete).status).toBe('waiting');
-    expect(evaluatePatienceFilter('long', contradictory).status).toBe('blocked');
+    expect(evaluatePatienceFilter('long', incomplete)).toMatchObject({ status: 'allowed', canEnter: true });
+    expect(evaluatePatienceFilter('long', contradictory)).toMatchObject({ status: 'allowed', canEnter: true });
   });
 
-  it('treats an empty crossMarketPrimaryInstruments as opting out of the gate, not as permanently unpassable', () => {
-    // Regression: on an empty array, `[].includes('contradicting')` and
-    // `[].includes('confirming')` are both false — without an explicit empty-array branch this
-    // fell through to the same "waiting, confirmation incomplete" path as a real unconfirmed
-    // signal, making the gate impossible to ever pass instead of a genuine no-op.
+  it('an empty crossMarketPrimaryInstruments still allows entry (advisory gate opted out)', () => {
     const value = input();
     value.crossMarket.us500.long = 'neutral';
     value.crossMarket.us30.long = 'neutral';
@@ -116,16 +121,15 @@ describe('Patience Filter', () => {
     const result = evaluatePatienceFilter('long', value, params);
 
     expect(result).toMatchObject({ status: 'allowed', canEnter: true });
-    expect(result.passedChecks).toContain('primary_cross_market_confirmation');
   });
 
-  it('does not require Russell 2000 and evaluates directions independently', () => {
+  it('evaluates directions independently and never blocks on cross-market contradiction (advisory only)', () => {
     const value = input();
     value.crossMarket.us500.short = 'contradicting';
     value.crossMarket.russell2000.long = 'confirming';
 
     expect(evaluatePatienceFilter('long', value)).toMatchObject({ status: 'allowed', canEnter: true });
-    expect(evaluatePatienceFilter('short', value)).toMatchObject({ status: 'blocked', canEnter: false });
+    expect(evaluatePatienceFilter('short', value)).toMatchObject({ status: 'allowed', canEnter: true });
   });
 
   it('is unavailable when a core evaluation input is missing', () => {

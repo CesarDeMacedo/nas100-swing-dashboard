@@ -75,10 +75,9 @@ export function evaluatePatienceFilter(
   if (availableProviders.includes(input.providerStatus)) passedChecks.push('provider_available');
   else blockingReasons.push('Market-data provider is unavailable');
 
+  // Event risk is advisory only (not a hard gate): it no longer blocks or delays entry, so the
+  // trader can weigh it manually instead of the filter silently withholding the signal.
   if (input.eventRisk === 'clear') passedChecks.push('event_risk_clear');
-  else if (input.eventRisk === 'blocking') blockingReasons.push('Event risk blocks entry');
-  else if (input.eventRisk === 'unknown') waitingReasons.push('Event-risk information is unknown');
-  else blockingReasons.push('Event-risk information is invalid');
 
   if (input.estimatedRR === null || !Number.isFinite(input.estimatedRR)) {
     missingInputs.push('estimatedRR');
@@ -102,21 +101,11 @@ export function evaluatePatienceFilter(
     waitingReasons.push('Confirmation candle is not yet valid');
   } else blockingReasons.push('Confirmation candle is invalid');
 
+  // Cross-market confirmation is advisory only (not a hard gate): a contradicting or incomplete
+  // primary signal no longer blocks or delays entry, so the trader can weigh it manually instead
+  // of the filter silently withholding the signal.
   const primarySignals = params.crossMarketPrimaryInstruments.map((key) => input.crossMarket[key][direction]);
-  if (params.crossMarketPrimaryInstruments.length === 0) {
-    // No primary cross-market instrument is configured — this gate is opted out of entirely,
-    // not "waiting on a signal that will never come". Must be handled before the includes()
-    // checks below: on an empty array both `includes('contradicting')` and `includes('confirming')`
-    // are false, which would otherwise fall through to the waiting branch and make the gate
-    // permanently unpassable instead of a no-op.
-    passedChecks.push('primary_cross_market_confirmation');
-  } else if (primarySignals.includes('contradicting')) {
-    blockingReasons.push('A primary cross-market index contradicts the direction');
-  } else if (primarySignals.includes('confirming')) {
-    passedChecks.push('primary_cross_market_confirmation');
-  } else {
-    waitingReasons.push('Primary cross-market confirmation is incomplete');
-  }
+  if (primarySignals.includes('confirming')) passedChecks.push('primary_cross_market_confirmation');
   const supplementaryInstruments = (['us500', 'us30', 'russell2000'] as const).filter(
     (key) => !params.crossMarketPrimaryInstruments.includes(key),
   );
